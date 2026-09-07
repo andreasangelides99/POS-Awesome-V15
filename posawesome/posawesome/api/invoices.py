@@ -309,8 +309,43 @@ def update_invoice(data):
     invoice_doc.ignore_pricing_rule = 1
     invoice_doc.flags.ignore_pricing_rule = True
 
+    # Cake Zone: set_missing_values() -> update_multi_mode_option() (erpnext
+    # sales_invoice.py:2801) CLEARS doc.payments and rebuilds the rows from the POS Profile
+    # with mode/account/type but NO amount, emitting "Payment methods refreshed".
+    # clear_unallocated_mode_of_payments() (sales_invoice.py:963) then deletes every
+    # zero-amount row, so an invoice synced from offline submits with no payments at all:
+    # paid_amount 0, outstanding = grand_total. Capture the amounts, restore them below.
+    incoming_payments = {}
+    for _p in invoice_doc.get("payments") or []:
+        if _p.get("mode_of_payment"):
+            _entry = incoming_payments.setdefault(
+                _p.mode_of_payment, {"amount": 0.0, "base_amount": 0.0}
+            )
+            _entry["amount"] += flt(_p.get("amount"))
+            _entry["base_amount"] += flt(_p.get("base_amount"))
+
     # Set missing values first
     invoice_doc.set_missing_values()
+
+    # Cake Zone: restore the payment amounts wiped above. Only fills rows left at zero, so a
+    # legitimately recalculated amount is never overwritten.
+    if incoming_payments:
+        for _p in invoice_doc.get("payments") or []:
+            _src = incoming_payments.pop(_p.mode_of_payment, None)
+            if _src and not flt(_p.amount):
+                _p.amount = _src["amount"]
+                if _src["base_amount"]:
+                    _p.base_amount = _src["base_amount"]
+        _dropped = {m: v["amount"] for m, v in incoming_payments.items() if flt(v["amount"])}
+        if _dropped:
+            frappe.log_error(
+                title="POS payment amount dropped on sync",
+                message=(
+                    f"Invoice {invoice_doc.get('name') or '(new)'} on POS Profile "
+                    f"{invoice_doc.get('pos_profile')}: modes not on the profile, "
+                    f"amounts lost: {_dropped}"
+                ),
+            )
 
     # Reapply any custom item names after defaults are set
     _apply_item_name_overrides(invoice_doc, overrides)

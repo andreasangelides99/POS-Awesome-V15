@@ -18,6 +18,26 @@ if (typeof window !== "undefined" && !window.Dexie) {
 
 frappe.provide("frappe.PosApp");
 
+// Cake Zone: frappe.call() pops a "Connection Lost" toast on EVERY call made while
+// offline (frappe/public/js/frappe/request.js:31) with no dedupe, so background
+// pollers bury the till in toasts. Collapse repeats to one per 30s.
+if (typeof frappe !== "undefined" && typeof frappe.show_alert === "function" && !frappe._cz_alert_throttled) {
+	frappe._cz_alert_throttled = true;
+	const _cz_show_alert = frappe.show_alert;
+	let _cz_last_offline_alert = 0;
+	frappe.show_alert = function (msg) {
+		const text = typeof msg === "string" ? msg : msg && msg.message;
+		const is_offline_alert =
+			text === "Connection Lost" ||
+			(typeof __ === "function" && text === __("Connection Lost"));
+		if (is_offline_alert) {
+			if (Date.now() - _cz_last_offline_alert < 30000) return;
+			_cz_last_offline_alert = Date.now();
+		}
+		return _cz_show_alert.apply(this, arguments);
+	};
+}
+
 frappe.PosApp.posapp = class {
 	constructor({ parent }) {
 		this.$parent = $(document);
