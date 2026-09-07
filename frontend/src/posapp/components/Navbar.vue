@@ -36,12 +36,12 @@
 
 			<!-- Slot for CPU gadget -->
 			<template #cpu-gadget>
-				<ServerUsageGadget />
+				<ServerUsageGadget v-if="posProfile.custom_show_server_gadgets" />
 			</template>
 
 			<!-- Slot for Database Usage Gadget -->
 			<template #db-usage-gadget>
-				<DatabaseUsageGadget />
+				<DatabaseUsageGadget v-if="posProfile.custom_show_server_gadgets" />
 			</template>
 
 			<!-- Slot for menu -->

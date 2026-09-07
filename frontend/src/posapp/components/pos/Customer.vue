@@ -46,7 +46,7 @@
 
 			<!-- Add icon (right) -->
 			<template #append-inner>
-				<v-tooltip text="Add new customer">
+				<v-tooltip v-if="pos_profile.custom_allow_create_customer" text="Add new customer">
 					<template #activator="{ props }">
 						<v-icon
 							v-bind="props"

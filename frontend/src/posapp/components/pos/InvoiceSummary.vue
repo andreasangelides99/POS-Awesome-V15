@@ -93,7 +93,7 @@
 			<!-- Action Buttons -->
 			<v-col cols="12" md="5">
 				<v-row dense>
-					<v-col cols="6">
+					<v-col v-if="pos_profile.custom_allow_save_and_clear" cols="6">
 						<v-btn
 							block
 							color="accent"
@@ -106,7 +106,7 @@
 							{{ __("Save & Clear") }}
 						</v-btn>
 					</v-col>
-					<v-col cols="6">
+					<v-col v-if="pos_profile.custom_allow_load_drafts" cols="6">
 						<v-btn
 							block
 							color="warning"

@@ -274,7 +274,7 @@
 													</span>
 												</div>
 											</div>
-											<div class="card-item-stock">
+											<div v-if="pos_profile.custom_show_available_qty" class="card-item-stock">
 												<v-icon size="small" class="stock-icon"
 													>mdi-package-variant</v-icon
 												>
@@ -398,7 +398,7 @@
 						{{ offersCount }} {{ __("Offers") }}
 					</v-btn>
 				</v-col>
-				<v-col cols="4" class="dynamic-margin-xs">
+				<v-col v-if="pos_profile.custom_show_coupons" cols="4" class="dynamic-margin-xs">
 					<v-btn
 						size="small"
 						block
@@ -1680,6 +1680,12 @@ export default {
 			];
 			if (!this.pos_profile.posa_display_item_code) {
 				items_headers.splice(1, 1);
+			}
+
+			// Cake Zone: hide on-hand stock from cashiers (internal control)
+			if (!this.pos_profile.custom_show_available_qty) {
+				const qtyIdx = items_headers.findIndex((h) => h.key === "actual_qty");
+				if (qtyIdx !== -1) items_headers.splice(qtyIdx, 1);
 			}
 
 			return items_headers;
