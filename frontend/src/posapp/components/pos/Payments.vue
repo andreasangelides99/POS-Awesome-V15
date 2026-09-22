@@ -404,6 +404,27 @@
 						</v-autocomplete>
 					</v-col>
 
+					<!-- Cake Zone: the number off the branch's printed event cake order pad.
+					     A deposit and its balance are separate sales weeks apart, and this is the
+					     only thing tying them to each other and to the paper form. The SERVER
+					     refuses an event cake sale without it (cakezone_erp event_cakes.
+					     require_order_number); this field is the convenience, not the control. -->
+					<v-col cols="12">
+						<v-text-field
+							class="pa-0 dark-field sleek-field"
+							variant="solo"
+							density="compact"
+							:bg-color="isDarkTheme ? '#1E1E1E' : 'white'"
+							clearable
+							color="primary"
+							:label="frappe._('Event Cake Order No')"
+							:hint="frappe._('From the paper order form. Required for an event cake.')"
+							persistent-hint
+							v-model="invoice_doc.custom_event_order_no"
+							:disabled="readonly"
+						></v-text-field>
+					</v-col>
+
 					<!-- Additional Notes (if enabled in POS profile) -->
 					<v-col cols="12" v-if="pos_profile.posa_display_additional_notes">
 						<v-textarea
