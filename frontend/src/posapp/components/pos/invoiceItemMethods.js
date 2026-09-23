@@ -1814,6 +1814,19 @@ export default {
 	// Fetch available stock for an item and cache it
 	async fetch_available_qty(item) {
 		if (!item || !item.item_code || !item.warehouse) return;
+		// A NON-STOCK item has no Bin, so there is no availability to fetch and a
+		// fetched 0 is not a shortage - it is the absence of the concept. Leaving
+		// available_qty UNDEFINED is what keeps every downstream check quiet:
+		// update_qty_limits and both quantity handlers guard on it being set, so
+		// this one line covers all three and any added later.
+		// Guarded on an explicit 0/false, never on falsiness: an item that simply
+		// has not told us yet must still be looked up.
+		if (item.is_stock_item === 0 || item.is_stock_item === false) {
+			item.available_qty = undefined;
+			item.max_qty = undefined;
+			item.disable_increment = false;
+			return;
+		}
 		const key = `${item.item_code}:${item.warehouse}:${item.batch_no || ""}:${item.uom}`;
 		const cached = this.available_stock_cache[key];
 		const now = Date.now();
