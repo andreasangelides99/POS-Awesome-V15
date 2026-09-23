@@ -43,7 +43,7 @@ def get_opening_dialog_data():
     payment_method_table = (
         "POS Payment Method" if get_version() == 13 else "Sales Invoice Payment"
     )
-    data["payments_method"] = frappe.get_list(
+    methods = frappe.get_list(
         payment_method_table,
         filters={"parent": ["in", pos_profiles_list]},
         fields=["*"],
@@ -51,6 +51,24 @@ def get_opening_dialog_data():
         order_by="parent",
         ignore_permissions=True,
     )
+
+    # ONLY A CASH TENDER HAS AN OPENING FLOAT. This list is consumed by exactly one
+    # place - OpeningDialog.vue, to build the balance_details rows - so upstream was
+    # asking a cashier for an opening amount against CREDIT CARD, which has no float:
+    # that money is with the bank, not in the drawer. A figure typed there becomes the
+    # card's expected_amount at close and reads as a difference nobody can explain.
+    #
+    # Card is NOT lost from the close: pos_closing_shift seeds payment_reconciliation
+    # from these balance_details and then APPENDS any mode that actually took money,
+    # with an opening of 0 - which is the correct row for a card.
+    cash_modes = {
+        m.name for m in frappe.get_all("Mode of Payment", fields=["name", "type"])
+        if m.type == "Cash"
+    }
+    cash_only = [m for m in methods if m.get("mode_of_payment") in cash_modes]
+    # A profile with no cash tender at all would otherwise be unable to open a shift,
+    # because the dialog refuses to submit an empty balance table.
+    data["payments_method"] = cash_only or methods
     # set currency from pos profile
     for mode in data["payments_method"]:
         mode["currency"] = frappe.get_cached_value(
