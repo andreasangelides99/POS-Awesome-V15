@@ -17,8 +17,26 @@ app_license = "GPLv3"
 # include js, css files in header of desk.html
 # app_include_css = "/assets/posawesome/css/posawesome.css"
 # app_include_js = "/assets/posawesome/js/posawesome.js"
+# The built bundle is served with `Cache-Control: max-age=31536000` under a STABLE
+# filename, so a browser that has loaded the POS once will not ask for it again
+# for a YEAR - every fix ships invisibly and a branch tablet quietly keeps running
+# last month's code until somebody hard-refreshes it. Thirty-three shops of
+# non-technical staff will not hard-refresh anything.
+#
+# So the URL carries the built file's mtime. It changes on every `yarn build`,
+# which makes it a new URL and forces the fetch; hooks are re-read on restart and
+# a build is always followed by one.
+import os as _os
+
+def _asset_version():
+    try:
+        return str(int(_os.path.getmtime(_os.path.join(
+            _os.path.dirname(__file__), "public", "dist", "js", "posawesome.umd.js"))))
+    except OSError:
+        return "0"
+
 app_include_js = [
-    "/assets/posawesome/dist/js/posawesome.umd.js",
+    f"/assets/posawesome/dist/js/posawesome.umd.js?v={_asset_version()}",
 ]
 
 app_include_css = [
