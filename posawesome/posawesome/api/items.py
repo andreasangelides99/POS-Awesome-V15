@@ -331,8 +331,14 @@ def get_items(
 								filters={"parent": item.name, "parentfield": "attributes"},
 							)
 
+						# "Only show what is in stock" can only mean anything for a STOCK
+						# item. A non-stock item has no Bin at all, so it has no actual_qty
+						# and was being skipped as out of stock for ever - which hid every
+						# event cake from every till, on a profile doing exactly what it
+						# was asked to do. A non-stock item is available by definition.
 						if (
 							posa_display_items_in_stock
+							and item.is_stock_item
 							and (not detail.get("actual_qty") or detail.get("actual_qty") < 0)
 							and not item.has_variants
 						):
