@@ -1405,6 +1405,18 @@ export default {
 					invoice: this.invoice_doc,
 					order: this.invoice_doc,
 				},
+				// A SERVER THROW NEVER REACHES `callback`. frappe.call only calls it on a
+				// successful response, so every frappe.throw on the way in - a missing
+				// event cake order number, no sales person, not enough stock - left
+				// `loading` true and the till frozen with the error still on screen. The
+				// cashier could not retry, correct it, or get out.
+				error: function (r) {
+					console.error("Submit refused by the server", r);
+					vm.loading = false;
+				},
+				always: function () {
+					vm.loading = false;
+				},
 				callback: function (r) {
 					if (r.exc) {
 						console.error("Error submitting invoice:", r.exc);
