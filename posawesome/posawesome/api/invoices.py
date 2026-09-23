@@ -342,8 +342,10 @@ def update_invoice(data):
             _src = incoming_payments.pop(_p.mode_of_payment, None)
             if _src and not flt(_p.amount):
                 _p.amount = _src["amount"]
-                if _src["base_amount"]:
-                    _p.base_amount = _src["base_amount"]
+                # Set it even when it is 0. The rebuilt row has base_amount NONE, and
+                # a zero is a real answer - a tender the customer did not use. Left as
+                # None it blows up the return path below on abs(None).
+                _p.base_amount = _src["base_amount"]
         _dropped = {m: v["amount"] for m, v in incoming_payments.items() if flt(v["amount"])}
         if _dropped:
             frappe.log_error(
@@ -455,8 +457,11 @@ def update_invoice(data):
     # For return invoices, payments should be negative amounts
     if invoice_doc.is_return:
         for payment in invoice_doc.payments:
-            payment.amount = -abs(payment.amount)
-            payment.base_amount = -abs(payment.base_amount)
+            # flt() because a payment row rebuilt by set_missing_values carries NO
+            # amounts at all - abs(None) is a TypeError, and it killed the first
+            # refund ever attempted on this system.
+            payment.amount = -abs(flt(payment.amount))
+            payment.base_amount = -abs(flt(payment.base_amount))
 
         invoice_doc.paid_amount = flt(
                 sum(p.amount for p in invoice_doc.payments)
