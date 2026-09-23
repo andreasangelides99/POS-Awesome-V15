@@ -7,6 +7,7 @@ import {
     clearOpeningStorage,
     setTaxTemplate,
 } from "../../offline/index.js";
+import { silentPrint } from "../plugins/print.js";
 
 export function usePosShift(openDialog) {
     const { proxy } = getCurrentInstance();
@@ -114,6 +115,26 @@ export function usePosShift(openDialog) {
             )
             .then((r) => {
                 if (r.message) {
+                    // Print the Z report before the profile is cleared - the format is
+                    // whatever the POS Closing Shift doctype defaults to, so the name is
+                    // not hard-coded here. r.message is the closing shift's name.
+                    const silent = !!pos_profile.value?.posa_silent_print;
+                    try {
+                        const url =
+                            frappe.urllib.get_base_url() +
+                            "/printview?doctype=" +
+                            encodeURIComponent("POS Closing Shift") +
+                            "&name=" +
+                            encodeURIComponent(r.message) +
+                            "&trigger_print=1&no_letterhead=1";
+                        if (silent) {
+                            silentPrint(url);
+                        } else {
+                            window.open(url, "_blank");
+                        }
+                    } catch (e) {
+                        console.error("Could not open the Z report", e);
+                    }
                     pos_opening_shift.value = null;
                     pos_profile.value = null;
                     clearOpeningStorage();

@@ -1,6 +1,7 @@
 /* global frappe */
 import {
         getPrintTemplate,
+        getBranchAddress,
         getTermsAndConditions,
         memoryInitPromise,
 } from "./offline/index.js";
@@ -132,6 +133,9 @@ export default async function renderOfflineInvoiceHTML(invoice) {
         const terms = getTermsAndConditions();
         const doc = {
                 ...invoice,
+                // written server-side at validate, so an offline invoice carries none
+                company_address_display:
+                        invoice.company_address_display || getBranchAddress() || "",
                 terms: invoice.terms || terms,
                 terms_and_conditions: invoice.terms_and_conditions || terms,
         };

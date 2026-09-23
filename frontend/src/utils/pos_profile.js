@@ -2,6 +2,7 @@
 import {
         getOpeningStorage,
         setPrintTemplate,
+        setBranchAddress,
         setTermsAndConditions,
 } from "../offline/index.js";
 
@@ -24,6 +25,24 @@ async function cachePrintTemplateAndTerms(profile) {
                 }
         } catch (e) {
                 console.error("Failed to fetch print format", e);
+        }
+
+        // The branch address, rendered exactly as the server renders it onto the invoice.
+        // An OFFLINE invoice is built in the browser and has no company_address_display -
+        // that field is written server-side at validate - so without caching it here the
+        // load-shedding receipt loses the two lines under the shop name.
+        try {
+                if (profile.company_address) {
+                        const addr = await frappe.call({
+                                method: "frappe.contacts.doctype.address.address.get_address_display",
+                                args: { address_dict: profile.company_address },
+                        });
+                        if (addr && addr.message) {
+                                setBranchAddress(addr.message);
+                        }
+                }
+        } catch (e) {
+                console.error("Failed to fetch branch address", e);
         }
 
         try {

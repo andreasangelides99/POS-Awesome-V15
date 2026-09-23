@@ -38,6 +38,8 @@ export {
         setTaxTemplate,
         getPrintTemplate,
         setPrintTemplate,
+        getBranchAddress,
+        setBranchAddress,
         getTermsAndConditions,
         setTermsAndConditions,
         setLastSyncTotals,

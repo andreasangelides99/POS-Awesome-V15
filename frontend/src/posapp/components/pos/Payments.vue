@@ -1152,6 +1152,24 @@ export default {
 		},
 		// Submit payment after validation
 		async submit(event, payment_received = false, print = false) {
+			// Cake Zone: the person who OPENED the float is not the person who made the
+			// sale, and the month-end bonus is split on sales recorded under each name -
+			// so on a profile that requires it, a sale with nobody against it is refused
+			// here rather than landing unattributable. The server refuses it too: an
+			// offline replay posts whatever the device was holding, so a screen check
+			// alone is not a control.
+			if (
+				this.pos_profile.custom_require_sales_person &&
+				!this.invoice_doc.is_return &&
+				!this.sales_person
+			) {
+				this.eventBus.emit("show_message", {
+					title: __("Choose who made this sale before taking payment"),
+					color: "error",
+				});
+				frappe.utils.play_sound("error");
+				return;
+			}
 			// For return invoices, ensure payment amounts are negative
 			if (this.invoice_doc.is_return) {
 				this.ensureReturnPaymentsAreNegative();

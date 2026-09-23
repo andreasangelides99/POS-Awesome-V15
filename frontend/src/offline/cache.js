@@ -43,6 +43,7 @@ export const memory = {
         tax_inclusive: false,
         manual_offline: false,
         print_template: "",
+        branch_address: "",
         terms_and_conditions: "",
 };
 
@@ -620,4 +621,26 @@ export async function getCacheUsageEstimate() {
 			percentage: 0,
 		};
 	}
+}
+
+// The branch address as it prints on the receipt. The OFFLINE invoice is built in
+// the browser and carries no company_address_display - that field is written
+// server-side at validate - so without this the offline slip loses the two address
+// lines under the shop name while every other line is identical.
+export function getBranchAddress() {
+        try {
+                return memory.branch_address || "";
+        } catch (e) {
+                console.error("Failed to get branch address", e);
+                return "";
+        }
+}
+
+export function setBranchAddress(html) {
+        try {
+                memory.branch_address = html || "";
+                persist("branch_address", memory.branch_address);
+        } catch (e) {
+                console.error("Failed to set branch address", e);
+        }
 }

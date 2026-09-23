@@ -198,10 +198,13 @@ export default {
 			drawer: false,
 			mini: true,
 			item: 0,
-			items: [
-				{ text: "POS", icon: "mdi-network-pos" },
-				{ text: "Payments", icon: "mdi-credit-card" },
-			],
+			// Cake Zone: the Payments view is an ACCOUNTS-RECEIVABLE screen - pick a
+			// customer, settle their outstanding invoices, write Payment Entries. A
+			// counter customer pays on the spot and an event cake deposit is revenue
+			// on receipt, so there is nothing here to collect. The tab was hard-coded
+			// with no flag behind it, so it is driven off the same profile field the
+			// server already gates the API on: posa_use_pos_awesome_payments.
+			items: [{ text: "POS", icon: "mdi-network-pos" }],
 			company: "POS Awesome",
 			companyImg: posLogo,
 			showAboutDialog: false,
@@ -228,6 +231,7 @@ export default {
 			this.eventBus.on("freeze", this.handleFreeze);
 			this.eventBus.on("unfreeze", this.handleUnfreeze);
 			this.eventBus.on("set_company", this.handleSetCompany);
+			this.eventBus.on("register_pos_profile", this.handleRegisterProfile);
 		}
 	},
 	unmounted() {
@@ -236,6 +240,7 @@ export default {
 			this.eventBus.off("freeze", this.handleFreeze);
 			this.eventBus.off("unfreeze", this.handleUnfreeze);
 			this.eventBus.off("set_company", this.handleSetCompany);
+			this.eventBus.off("register_pos_profile", this.handleRegisterProfile);
 		}
 	},
 	methods: {
@@ -339,6 +344,13 @@ export default {
 			this.freeze = false;
 			this.freezeTitle = "";
 			this.freezeMsg = "";
+		},
+		handleRegisterProfile(profile) {
+			const allow = !!(profile && profile.posa_use_pos_awesome_payments);
+			const tabs = [{ text: "POS", icon: "mdi-network-pos" }];
+			if (allow) tabs.push({ text: "Payments", icon: "mdi-credit-card" });
+			this.items = tabs;
+			if (!allow && this.item !== 0) this.item = 0;
 		},
 		handleSetCompany(data) {
 			if (typeof data === "string") {
