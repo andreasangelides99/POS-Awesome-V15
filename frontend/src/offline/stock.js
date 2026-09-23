@@ -67,8 +67,16 @@ export function validateStockForOfflineInvoice(items) {
 
 	items.forEach((item) => {
 		const itemCode = item.item_code;
+		// A non-stock line (an event cake) has nothing in the stock cache and never
+		// will, so checking it offline would refuse the sale outright - during load
+		// shedding, which is exactly when nobody can look into it.
+		const cached = stockCache[itemCode];
+		const isStockItem = item.is_stock_item !== undefined ? item.is_stock_item : cached !== undefined;
+		if (!isStockItem) {
+			return;
+		}
 		const requestedQty = Math.abs(item.qty || 0);
-		const currentStock = stockCache[itemCode]?.actual_qty || 0;
+		const currentStock = cached?.actual_qty || 0;
 
 		if (currentStock - requestedQty < 0) {
 			invalidItems.push({

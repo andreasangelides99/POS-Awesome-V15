@@ -1727,7 +1727,13 @@ export default {
 				attrsMeta = attrsMeta || {};
 				this.eventBus.emit("open_variants_model", item, variants, this.pos_profile, attrsMeta);
 			} else {
-				if (item.actual_qty === 0 && this.pos_profile.posa_display_items_in_stock) {
+				// A NON-STOCK item has no Bin, so actual_qty is 0 for ever - an event
+				// cake is not a physical thing and can never satisfy a stock check.
+				if (
+					item.is_stock_item &&
+					item.actual_qty === 0 &&
+					this.pos_profile.posa_display_items_in_stock
+				) {
 					this.eventBus.emit("show_message", {
 						title: `No stock available for ${item.item_name}`,
 						color: "warning",

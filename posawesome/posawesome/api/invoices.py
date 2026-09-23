@@ -63,10 +63,18 @@ def _get_available_stock(item):
 
 
 def _collect_stock_errors(items):
-    """Return list of items exceeding available stock."""
+    """Return list of items exceeding available stock.
+
+    A NON-STOCK line is skipped outright: it has no Bin, so its availability is 0
+    for ever and an event cake would be refused every time. _validate_stock_on_invoice
+    already filters these out before calling here; validate_cart_items does not, so
+    the rule belongs in one place - here - rather than at each caller.
+    """
     errors = []
     for d in items:
         if flt(d.get("qty")) < 0:
+            continue
+        if d.get("is_stock_item") is not None and not d.get("is_stock_item"):
             continue
         available = _get_available_stock(d)
         requested = flt(d.get("stock_qty") or (flt(d.get("qty")) * flt(d.get("conversion_factor") or 1)))
@@ -79,7 +87,7 @@ def _collect_stock_errors(items):
                     "available_qty": available,
                 }
             )
-        return errors
+    return errors
 
 
 def _merge_duplicate_taxes(invoice_doc):
