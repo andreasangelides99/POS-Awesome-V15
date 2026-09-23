@@ -404,9 +404,28 @@ export default {
 		},
 
 		handleLogout() {
-			frappe.call("logout").finally(() => {
-				window.location.href = "/app";
-			});
+			// frappe.call returns a jQUERY Deferred, and jQuery has no .finally() - so
+			// `frappe.call("logout").finally(...)` threw before it could redirect. The
+			// request DID go, which is why the till looked stuck: the session was gone
+			// server-side while the page sat there, and only a later reload revealed it.
+			// .always() is the jQuery equivalent; the rest is belt and braces.
+			//
+			// The offline cache is deliberately NOT cleared here. It holds invoices that
+			// have not synced yet, and wiping them on the way out would throw away sales
+			// taken during a signal outage - the one thing offline capture exists to
+			// protect. They survive the logout and sync on the next sign-in.
+			const leave = () => window.location.replace("/login");
+			let r;
+			try {
+				r = frappe.call("logout");
+			} catch (e) {
+				console.error("Logout request failed", e);
+				return leave();
+			}
+			if (r && typeof r.always === "function") r.always(leave);
+			else if (r && typeof r.finally === "function") r.finally(leave);
+			else if (r && typeof r.then === "function") r.then(leave, leave);
+			else leave();
 		},
 
 		handleRefreshCacheUsage() {
