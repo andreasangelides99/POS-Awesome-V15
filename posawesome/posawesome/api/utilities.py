@@ -170,25 +170,61 @@ def ensure_child_doctype(doc, table_field, child_doctype):
             row.doctype = child_doctype
 
 
-@frappe.whitelist()
-def get_sales_person_names():
-    import json
+def _branches_for_user(pos_profile=None):
+    """Which branch(es) the caller stands in, as POS Profile name prefixes."""
+    names = [pos_profile] if pos_profile else frappe.get_all(
+        "POS Profile User", filters={"user": frappe.session.user}, pluck="parent")
+    if not names:
+        # a user who is scoped but not yet listed on a profile
+        names = frappe.get_all("User Permission",
+                               filters={"user": frappe.session.user, "allow": "POS Profile"},
+                               pluck="for_value")
+    return sorted({n.rsplit(" - ", 1)[0] for n in names if n})
 
-    print("Fetching sales persons...")
+
+@frappe.whitelist()
+def get_sales_person_names(pos_profile=None):
+    """The PEOPLE of this till's own branch - not groups, not other branches.
+
+    Upstream returned every enabled Sales Person. On a tree that means the GROUP
+    nodes as well, so a Pretoria West cashier was offered `Sales Team`, `Westgate`,
+    `Pretoria West`, and every person at every shop. This figure decides who is
+    paid a bonus at month end, so it is narrowed twice: LEAVES ONLY, and only
+    under the branch the till belongs to.
+
+    The branch is derived from the SESSION USER's own POS Profiles when the caller
+    does not name one, so this needs no change in the Vue frontend and no rebuild.
+    Where no branch can be determined - an admin who is on no profile - it falls
+    back to every leaf, which keeps the desk usable without ever offering a group.
+
+    Cake Zone: the tree is `Sales Team > <Branch> > <Person>`.
+    """
     try:
-        sales_persons = frappe.get_list(
-            "Sales Person",
-            filters={"enabled": 1},
-            fields=["name", "sales_person_name"],
-            limit_page_length=100000,
-        )
-        print(f"Found {len(sales_persons)} sales persons: {json.dumps(sales_persons)}")
-        return sales_persons
-    except Exception as e:
-        print(f"Error fetching sales persons: {str(e)}")
-        frappe.log_error(
-            f"Error fetching sales persons: {str(e)}", "POS Sales Person Error"
-        )
+        branches = _branches_for_user(pos_profile)
+        groups = [b for b in branches if frappe.db.exists("Sales Person", b)]
+
+        filters = {"enabled": 1, "is_group": 0}
+        if groups:
+            # nested set, so a person nested any number of levels down is found
+            bounds = [frappe.db.get_value("Sales Person", g, ["lft", "rgt"]) for g in groups]
+            rows = []
+            seen = set()
+            for lft, rgt in bounds:
+                for r in frappe.get_all("Sales Person",
+                                        filters={**filters, "lft": [">", lft], "rgt": ["<", rgt]},
+                                        fields=["name", "sales_person_name"],
+                                        order_by="sales_person_name",
+                                        limit_page_length=0):
+                    if r.name not in seen:
+                        seen.add(r.name)
+                        rows.append(r)
+            return rows
+
+        return frappe.get_all("Sales Person", filters=filters,
+                              fields=["name", "sales_person_name"],
+                              order_by="sales_person_name", limit_page_length=0)
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "POS Sales Person Error")
         return []
 
 
