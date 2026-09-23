@@ -231,6 +231,35 @@
 				<v-divider></v-divider>
 
 				<!-- Invoice Totals (Net, Tax, Total, Discount, Grand, Rounded) -->
+				<!-- Cake Zone: WHO MADE THE SALE, first on the screen. The person who opened
+				     the float is not necessarily the one who served the customer, and the
+				     month-end bonus is split by the share recorded under each name - so this
+				     is the field most likely to be forgotten and the one that costs somebody
+				     money when it is. It sat under the totals, off the bottom of the screen. -->
+				<v-row class="pb-0 mb-2" align="start">
+					<v-col cols="12">
+						<v-select
+							density="compact"
+							clearable
+							variant="solo"
+							color="primary"
+							:label="frappe._('Sales Person')"
+							v-model="sales_person"
+							:items="sales_persons"
+							item-title="title"
+							item-value="value"
+							:bg-color="isDarkTheme ? '#1E1E1E' : 'white'"
+							class="dark-field sleek-field"
+							:no-data-text="__('Sales Person not found')"
+							hide-details
+							:disabled="readonly"
+						></v-select>
+						<p v-if="!sales_persons || !sales_persons.length" class="mt-1 mb-0 text-caption text-red">
+							{{ __("No sales persons are set up for this branch") }}
+						</p>
+					</v-col>
+				</v-row>
+				<v-divider class="mb-2"></v-divider>
 				<v-row class="pa-1">
 					<v-col cols="6">
 						<v-text-field
@@ -409,7 +438,7 @@
 					     only thing tying them to each other and to the paper form. The SERVER
 					     refuses an event cake sale without it (cakezone_erp event_cakes.
 					     require_order_number); this field is the convenience, not the control. -->
-					<v-col cols="12">
+					<v-col cols="12" v-if="has_event_cake || invoice_doc.custom_event_order_no">
 						<v-text-field
 							class="pa-0 dark-field sleek-field"
 							variant="solo"
@@ -615,33 +644,6 @@
 					</v-row>
 				</div>
 
-				<v-divider></v-divider>
-
-				<!-- Sales Person Selection -->
-				<v-row class="pb-0 mb-2" align="start">
-					<v-col cols="12">
-						<p v-if="sales_persons && sales_persons.length > 0" class="mt-1 mb-1 text-subtitle-2">
-							{{ sales_persons.length }} sales persons found
-						</p>
-						<p v-else class="mt-1 mb-1 text-subtitle-2 text-red">No sales persons found</p>
-						<v-select
-							density="compact"
-							clearable
-							variant="solo"
-							color="primary"
-							:label="frappe._('Sales Person')"
-							v-model="sales_person"
-							:items="sales_persons"
-							item-title="title"
-							item-value="value"
-							:bg-color="isDarkTheme ? '#1E1E1E' : 'white'"
-							class="dark-field sleek-field"
-							:no-data-text="__('Sales Person not found')"
-							hide-details
-							:disabled="readonly"
-						></v-select>
-					</v-col>
-				</v-row>
 			</div>
 		</v-card>
 
@@ -817,6 +819,19 @@ export default {
 		};
 	},
 	computed: {
+		// Is an event cake in this sale? Two signals, either is enough: the item GROUP
+		// (which is what cakezone_erp's server guard keys on) and the EVC- code prefix.
+		// They agree exactly on the catalogue, and accepting either means the field
+		// cannot vanish just because item_group did not survive onto the cart line -
+		// a hidden field on a sale the server will refuse is the one bad outcome.
+		has_event_cake() {
+			const items = (this.invoice_doc && this.invoice_doc.items) || [];
+			return items.some(
+				(it) =>
+					it.item_group === "Event Cakes" ||
+					(it.item_code || "").startsWith("EVC-"),
+			);
+		},
 		// Get currency symbol for given or current currency
 		currencySymbol() {
 			return (currency) => {
