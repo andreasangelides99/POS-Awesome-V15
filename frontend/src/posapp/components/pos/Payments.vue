@@ -767,6 +767,7 @@
 import format, { formatUtils } from "../../format";
 import {
 	saveOfflineInvoice,
+	reportSyncOutcome,
 	syncOfflineInvoices,
 	getPendingOfflineInvoiceCount,
 	isOffline,
@@ -1387,9 +1388,13 @@ export default {
 					vm.loading = false;
 					return;
 				} catch (error) {
-					vm.eventBus.emit("show_message", {
-						title: __("Cannot Save Offline Invoice: ") + (error.message || __("Unknown error")),
-						color: "error",
+					// A modal, not a toast: the sale is being REFUSED and the cashier
+					// has to read why while the customer is still at the counter.
+					const text = error.message || __("This sale could not be saved.");
+					frappe.msgprint({
+						title: __("Sale not completed"),
+						indicator: "red",
+						message: frappe.utils.escape_html(text).replace(/\n/g, "<br>"),
 					});
 					vm.loading = false;
 					return;
@@ -1986,20 +1991,7 @@ export default {
 				return;
 			}
 			const result = await syncOfflineInvoices();
-			if (result && (result.synced || result.drafted)) {
-				if (result.synced) {
-					this.eventBus.emit("show_message", {
-						title: `${result.synced} offline invoice${result.synced > 1 ? "s" : ""} synced`,
-						color: "success",
-					});
-				}
-				if (result.drafted) {
-					this.eventBus.emit("show_message", {
-						title: `${result.drafted} offline invoice${result.drafted > 1 ? "s" : ""} saved as draft`,
-						color: "warning",
-					});
-				}
-			}
+			reportSyncOutcome(result, this.eventBus);
 			this.eventBus.emit("pending_invoices_changed", getPendingOfflineInvoiceCount());
 		},
 	},

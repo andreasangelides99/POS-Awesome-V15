@@ -1,15 +1,54 @@
 /* global frappe */
 import { memory, resetOfflineState, setLastSyncTotals, MAX_QUEUE_ITEMS, reduceCacheUsage } from "./cache.js";
 import { persist } from "./core.js";
-import { updateLocalStock } from "./stock.js";
+import { updateLocalStock, validateStockForOfflineInvoice } from "./stock.js";
 
 // Flag to avoid concurrent invoice syncs which can cause duplicate submissions
 let invoiceSyncInProgress = false;
+
+// A frappe.call rejection hides the real reason in several places depending on
+// how the server failed. Dig it out, strip the HTML, and fall back to plain
+// words - never leave the cashier with "[object Object]".
+export function describeSyncError(error) {
+	const clean = (t) =>
+		String(t || "")
+			.replace(/<[^>]*>/g, " ")
+			.replace(/\s+/g, " ")
+			.trim();
+	try {
+		const raw = error?._server_messages || error?.responseJSON?._server_messages;
+		if (raw) {
+			const parsed = JSON.parse(raw);
+			for (const entry of parsed) {
+				const obj = typeof entry === "string" ? JSON.parse(entry) : entry;
+				const text = clean(obj?.message || obj);
+				if (text) return text;
+			}
+		}
+	} catch (e) {
+		// fall through to the generic paths below
+	}
+	return (
+		clean(error?.message) ||
+		clean(error?.responseJSON?.exception) ||
+		clean(error?.exc_type) ||
+		"The server refused this sale."
+	);
+}
 
 export function saveOfflineInvoice(entry) {
 	// Validate that invoice has items before saving
 	if (!entry.invoice || !Array.isArray(entry.invoice.items) || !entry.invoice.items.length) {
 		throw new Error("Cart is empty. Add items before saving.");
+	}
+
+	// Refuse an oversell HERE, while the customer is still at the counter. This
+	// check lived in the old monolithic offline.js and was lost when the module
+	// was split; without it an offline oversell is queued, the receipt prints,
+	// and the server rejects it on sync - by which time the cake has gone.
+	const validation = validateStockForOfflineInvoice(entry.invoice.items);
+	if (!validation.isValid) {
+		throw new Error(validation.errorMessage);
 	}
 
 	const key = "offline_invoices";
@@ -211,6 +250,9 @@ export async function syncOfflineInvoices() {
 		}
 
 		const failures = [];
+		// Every sale the server would not accept, with the reason, so the till can
+		// tell the cashier exactly which one and why instead of a bare count.
+		const rejected = [];
 		let synced = 0;
 		let drafted = 0;
 
@@ -225,17 +267,26 @@ export async function syncOfflineInvoices() {
 				});
 				synced++;
 			} catch (error) {
+				const reason = describeSyncError(error);
 				console.error("Failed to submit invoice, saving as draft", error);
+				let parkedAs = inv.invoice?.name || "";
 				try {
-					await frappe.call({
+					const res = await frappe.call({
 						method: "posawesome.posawesome.api.invoices.update_invoice",
 						args: { data: inv.invoice },
 					});
+					parkedAs = res?.message?.name || parkedAs;
 					drafted += 1;
 				} catch (draftErr) {
 					console.error("Failed to save invoice as draft", draftErr);
 					failures.push(inv);
 				}
+				rejected.push({
+					name: parkedAs,
+					reason: reason,
+					amount: inv.invoice?.paid_amount ?? inv.invoice?.grand_total ?? 0,
+					currency: inv.invoice?.currency || "",
+				});
 			}
 		}
 
@@ -256,7 +307,7 @@ export async function syncOfflineInvoices() {
 			}
 		}
 
-		const totals = { pending: pendingLeft, synced, drafted };
+		const totals = { pending: pendingLeft, synced, drafted, rejected };
 		if (pendingLeft || drafted) {
 			// Persist totals only if there are invoices still pending or drafted
 			setLastSyncTotals(totals);
@@ -268,6 +319,49 @@ export async function syncOfflineInvoices() {
 	} finally {
 		invoiceSyncInProgress = false;
 	}
+}
+
+// ONE place that turns a sync result into what the cashier is told. Home.vue and
+// Payments.vue both call this; duplicating it is how the stock check got lost.
+export function reportSyncOutcome(result, eventBus) {
+	if (!result) return;
+
+	if (result.synced) {
+		eventBus?.emit("show_message", {
+			title: `${result.synced} offline sale${result.synced > 1 ? "s" : ""} synced`,
+			color: "success",
+		});
+	}
+
+	const rejected = Array.isArray(result.rejected) ? result.rejected : [];
+	if (!rejected.length) return;
+
+	// A modal per rejected sale. NOT a toast - money was taken for each of these
+	// and the sale is not in the books; the cashier has to acknowledge it.
+	for (const r of rejected) {
+		const money = r.amount ? `${r.currency || ""} ${Number(r.amount).toFixed(2)}`.trim() : "";
+		const lines = [
+			`<b>SALE NOT COMPLETED${r.name ? " &mdash; " + frappe.utils.escape_html(r.name) : ""}</b>`,
+			"",
+			frappe.utils.escape_html(r.reason || "The server refused this sale."),
+			"",
+			money
+				? `<b>${frappe.utils.escape_html(money)}</b> was taken at the till, but this sale is NOT recorded and the stock has NOT come off.`
+				: "This sale is NOT recorded and the stock has NOT come off.",
+			"",
+			"Tell your supervisor before cashing up.",
+		];
+		frappe.msgprint({
+			title: "Sale not completed",
+			indicator: "red",
+			message: lines.join("<br>"),
+		});
+	}
+
+	eventBus?.emit("show_message", {
+		title: `${rejected.length} sale${rejected.length > 1 ? "s" : ""} could not be completed`,
+		color: "error",
+	});
 }
 
 export async function syncOfflineCustomers() {

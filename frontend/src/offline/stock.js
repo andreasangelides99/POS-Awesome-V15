@@ -88,16 +88,22 @@ export function validateStockForOfflineInvoice(items) {
 		}
 	});
 
-	// Create clean error message
+	// Plain words for a cashier with a customer waiting - no jargon, and it
+	// must be obvious the sale is being refused, not merely warned about.
 	let errorMessage = "";
 	if (invalidItems.length === 1) {
 		const item = invalidItems[0];
-		errorMessage = `Not enough stock for ${item.item_name}. You need ${item.requested_qty} but only ${item.available_qty} available.`;
+		errorMessage =
+			`Cannot sell ${item.item_name}\n` +
+			`The branch has ${item.available_qty}. You are trying to sell ${item.requested_qty}.`;
 	} else if (invalidItems.length > 1) {
 		errorMessage =
-			"Insufficient stock for multiple items:\n" +
+			"Cannot complete this sale\n" +
 			invalidItems
-				.map((item) => `• ${item.item_name}: Need ${item.requested_qty}, Have ${item.available_qty}`)
+				.map(
+					(item) =>
+						`• ${item.item_name}: the branch has ${item.available_qty}, you are trying to sell ${item.requested_qty}`,
+				)
 				.join("\n");
 	}
 

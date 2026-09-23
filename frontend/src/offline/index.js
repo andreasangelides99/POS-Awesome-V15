@@ -80,6 +80,7 @@ export {
 export {
 	isOffline,
 	saveOfflineInvoice,
+	reportSyncOutcome,
 	getOfflineInvoices,
 	clearOfflineInvoices,
 	deleteOfflineInvoice,
