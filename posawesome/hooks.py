@@ -26,21 +26,27 @@ app_license = "GPLv3"
 # So the URL carries the built file's mtime. It changes on every `yarn build`,
 # which makes it a new URL and forces the fetch; hooks are re-read on restart and
 # a build is always followed by one.
+# The CSS needs this JUST AS BADLY as the JS, and originally did not have it.
+# Vue's `<style scoped>` compiles to a `[data-v-<hash>]` attribute selector, and
+# that hash changes whenever the component file changes. So a new bundle paired
+# with a year-old cached stylesheet means NONE of that component's styles match
+# any more: the markup renders, and every icon, font and spacing rule silently
+# stops applying. It looks like the component broke. It is only a stale file.
 import os as _os
 
-def _asset_version():
+def _asset_version(filename):
     try:
         return str(int(_os.path.getmtime(_os.path.join(
-            _os.path.dirname(__file__), "public", "dist", "js", "posawesome.umd.js"))))
+            _os.path.dirname(__file__), "public", "dist", "js", filename))))
     except OSError:
         return "0"
 
 app_include_js = [
-    f"/assets/posawesome/dist/js/posawesome.umd.js?v={_asset_version()}",
+    f"/assets/posawesome/dist/js/posawesome.umd.js?v={_asset_version('posawesome.umd.js')}",
 ]
 
 app_include_css = [
-    "/assets/posawesome/dist/js/posawesome.css",
+    f"/assets/posawesome/dist/js/posawesome.css?v={_asset_version('posawesome.css')}",
 ]
 
 # include js, css files in header of web template
