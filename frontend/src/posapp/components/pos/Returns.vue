@@ -200,6 +200,9 @@
 								<template v-slot:item.posting_date="{ item }">
 									{{ formatDateDisplay(item.posting_date) }}
 								</template>
+								<template v-slot:item.posting_time="{ item }">
+									{{ formatTimeDisplay(item.posting_time) }}
+								</template>
 								<template v-slot:item.grand_total="{ item }">
 									{{ currencySymbol(item.currency) }}
 									{{ formatCurrency(item.grand_total) }}
@@ -284,6 +287,14 @@ export default {
 				value: "posting_date",
 			},
 			{
+				// Several tills, one branch, one day: the date alone does not tell two
+				// R137 sales apart. The time is what the customer's slip shows.
+				title: __("Time"),
+				align: "start",
+				sortable: true,
+				value: "posting_time",
+			},
+			{
 				title: __("Invoice"),
 				value: "name",
 				align: "start",
@@ -311,6 +322,11 @@ export default {
 		},
 	},
 	methods: {
+		// posting_time arrives as "14:46:39.000000"; the slip shows HH:MM.
+		formatTimeDisplay(value) {
+			if (!value) return "";
+			return String(value).slice(0, 5);
+		},
 		formatDateDisplay(dateStr) {
 			if (!dateStr) return "";
 			try {

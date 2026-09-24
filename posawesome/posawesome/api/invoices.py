@@ -869,7 +869,9 @@ def search_invoices_for_return(
         fields=["name"],
         limit_start=start,
         limit_page_length=page_length,
-        order_by="posting_date desc, name desc",
+        # posting_time too: a branch rings up dozens of identical amounts in a day
+        # and newest-first has to mean newest, not "newest date, then whatever".
+        order_by="posting_date desc, posting_time desc, name desc",
     )
 
     # Process and return the results
