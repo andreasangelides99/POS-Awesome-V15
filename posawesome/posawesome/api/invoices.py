@@ -62,6 +62,25 @@ def _get_available_stock(item):
     return get_stock_availability(item_code, warehouse)
 
 
+def _is_stock_item(d):
+    """Is this cart row a stock item?
+
+    The Item master decides, ALWAYS - not the client. A cart row can arrive
+    without the flag (the submission row drops it) or with the wrong one, and
+    either way an event cake gets refused for having no Bin. This is a cached
+    read, so asking every time costs nothing.
+    """
+    item_code = d.get("item_code")
+    if item_code:
+        flag = frappe.get_cached_value("Item", item_code, "is_stock_item")
+        if flag is not None:
+            return bool(flag)
+    # Unknown item: fall back to what the client said, else assume it is stock so
+    # a malformed row is still checked rather than waved through.
+    flag = d.get("is_stock_item")
+    return True if flag is None else bool(flag)
+
+
 def _collect_stock_errors(items):
     """Return list of items exceeding available stock.
 
@@ -69,12 +88,17 @@ def _collect_stock_errors(items):
     for ever and an event cake would be refused every time. _validate_stock_on_invoice
     already filters these out before calling here; validate_cart_items does not, so
     the rule belongs in one place - here - rather than at each caller.
+
+    Crucially we do NOT trust the client for is_stock_item. The cart row carries it,
+    but the row the till builds for SUBMISSION drops it, so an event cake arrived
+    here looking like an ordinary item and was refused. The Item master is the
+    authority and it is one cached lookup.
     """
     errors = []
     for d in items:
         if flt(d.get("qty")) < 0:
             continue
-        if d.get("is_stock_item") is not None and not d.get("is_stock_item"):
+        if not _is_stock_item(d):
             continue
         available = _get_available_stock(d)
         requested = flt(d.get("stock_qty") or (flt(d.get("qty")) * flt(d.get("conversion_factor") or 1)))

@@ -654,6 +654,10 @@ export default {
 				// Retain the item name for offline invoices
 				// Fallback to item_code if item_name is not available
 				item_name: item.item_name || item.item_code,
+				// Carried deliberately: without it an event cake reaches the stock
+				// checks looking like an ordinary item and is refused for having no
+				// Bin. The server double-checks against the Item master anyway.
+				is_stock_item: item.is_stock_item,
 				name_overridden: item.name_overridden ? 1 : 0,
 				posa_row_id: item.posa_row_id,
 				posa_offers: item.posa_offers,
@@ -1779,6 +1783,16 @@ export default {
 
 	// Update quantity limits based on available stock
 	update_qty_limits(item) {
+		// A non-stock line has no ceiling. fetch_available_qty already returns early
+		// for these, but this is the ONE function that creates max_qty and every
+		// "negative stock" warning keys off max_qty being set - so the rule belongs
+		// here too, where it cannot be bypassed by a route added later.
+		if (item && (item.is_stock_item === 0 || item.is_stock_item === false)) {
+			item.available_qty = undefined;
+			item.max_qty = undefined;
+			item.disable_increment = false;
+			return;
+		}
 		if (item && item.available_qty !== undefined) {
 			item.max_qty = flt(item.available_qty / (item.conversion_factor || 1));
 
