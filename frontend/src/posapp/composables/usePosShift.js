@@ -8,6 +8,10 @@ import {
     setTaxTemplate,
 } from "../../offline/index.js";
 import { silentPrint } from "../plugins/print.js";
+import { maySeeShiftReports } from "../utils/shiftReports.js";
+
+// Not an error - just "this user does not get a Z report".
+class SkipZReport extends Error {}
 
 export function usePosShift(openDialog) {
     const { proxy } = getCurrentInstance();
@@ -118,8 +122,16 @@ export function usePosShift(openDialog) {
                     // Print the Z report before the profile is cleared - the format is
                     // whatever the POS Closing Shift doctype defaults to, so the name is
                     // not hard-coded here. r.message is the closing shift's name.
+                    //
+                    // Cashiers may not pull a Z report (the server refuses it too), so
+                    // do not even ask for it - otherwise closing a till would end with
+                    // a permission error page in the cashier's face. The shift still
+                    // closes; the supervisor prints the Z afterwards.
                     const silent = !!pos_profile.value?.posa_silent_print;
                     try {
+                        if (!maySeeShiftReports()) {
+                            throw new SkipZReport();
+                        }
                         const url =
                             frappe.urllib.get_base_url() +
                             "/printview?doctype=" +
@@ -133,7 +145,9 @@ export function usePosShift(openDialog) {
                             window.open(url, "_blank");
                         }
                     } catch (e) {
-                        console.error("Could not open the Z report", e);
+                        if (!(e instanceof SkipZReport)) {
+                            console.error("Could not open the Z report", e);
+                        }
                     }
                     pos_opening_shift.value = null;
                     pos_profile.value = null;

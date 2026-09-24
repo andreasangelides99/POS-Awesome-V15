@@ -53,7 +53,9 @@
 					:network-online="networkOnline"
 					:server-online="serverOnline"
 					:is-dark="isDark"
+					:can-print-shift-reports="canPrintShiftReports"
 					@close-shift="openCloseShift"
+					@print-x-report="printXReport"
 					@print-last-invoice="printLastInvoice"
 					@sync-invoices="syncPendingInvoices"
 					@toggle-offline="toggleManualOffline"
@@ -121,7 +123,9 @@ import OfflineInvoices from "./OfflineInvoices.vue";
 import ServerUsageGadget from "./navbar/ServerUsageGadget.vue";
 import DatabaseUsageGadget from "./navbar/DatabaseUsageGadget.vue";
 import posLogo from "./pos/pos.png";
-import { forceClearAllCache } from "../../offline/cache.js";
+import { forceClearAllCache, getOpeningStorage } from "../../offline/cache.js";
+import { maySeeShiftReports } from "../utils/shiftReports.js";
+import { silentPrint } from "../plugins/print.js";
 import { clearAllCaches } from "../../utils/clearAllCaches.js";
 import { isOffline } from "../../offline/index.js";
 import { useRtl } from "../composables/useRtl.js";
@@ -219,6 +223,9 @@ export default {
 		};
 	},
 	computed: {
+		canPrintShiftReports() {
+			return maySeeShiftReports();
+		},
 		appBarColor() {
 			return this.isDark ? this.$vuetify.theme.themes.dark.colors.surface : "white";
 		},
@@ -279,6 +286,32 @@ export default {
 		},
 		printLastInvoice() {
 			this.$emit("print-last-invoice");
+		},
+		printXReport() {
+			// The X report is the takings SO FAR, so it is always the shift that is
+			// open right now - there is nothing for the cashier to choose.
+			const shift = getOpeningStorage()?.pos_opening_shift;
+			if (!shift?.name) {
+				frappe.msgprint({
+					title: __("No open shift"),
+					indicator: "orange",
+					message: __("There is no shift open on this till, so there is nothing to report on yet."),
+				});
+				return;
+			}
+			const url =
+				frappe.urllib.get_base_url() +
+				"/printview?doctype=" +
+				encodeURIComponent("POS Opening Shift") +
+				"&name=" +
+				encodeURIComponent(shift.name) +
+				"&trigger_print=1&no_letterhead=1";
+			try {
+				silentPrint(url);
+			} catch (e) {
+				console.error("Could not open the X report", e);
+				window.open(url, "_blank");
+			}
 		},
 		syncPendingInvoices() {
 			this.$emit("sync-invoices");

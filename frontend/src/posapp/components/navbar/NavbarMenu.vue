@@ -33,6 +33,26 @@
 				</v-list-item>
 
 				<v-list-item
+					v-if="canPrintShiftReports"
+					@click="$emit('print-x-report')"
+					class="menu-item-compact info-action"
+				>
+					<template v-slot:prepend>
+						<div class="menu-icon-wrapper-compact info-icon">
+							<v-icon color="white" size="16">mdi-file-chart-outline</v-icon>
+						</div>
+					</template>
+					<div class="menu-content-compact">
+						<v-list-item-title class="menu-item-title-compact">{{
+							__("X Report")
+						}}</v-list-item-title>
+						<v-list-item-subtitle class="menu-item-subtitle-compact">{{
+							__("Takings so far this shift")
+						}}</v-list-item-subtitle>
+					</div>
+				</v-list-item>
+
+				<v-list-item
 					v-if="posProfile.posa_allow_print_last_invoice"
 					@click="$emit('print-last-invoice')"
 					:disabled="!lastInvoiceId"
@@ -299,6 +319,8 @@ export default {
 		networkOnline: Boolean,
 		serverOnline: Boolean,
 		isDark: Boolean,
+		// Supervisors only - the X report is a control document, not a till receipt.
+		canPrintShiftReports: Boolean,
 	},
 	data() {
 		return {
