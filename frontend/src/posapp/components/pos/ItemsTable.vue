@@ -305,7 +305,8 @@
 											:disabled="
 												!pos_profile.posa_allow_user_to_edit_rate ||
 												!!item.posa_is_replace ||
-												!!item.posa_offer_applied
+												!!item.posa_offer_applied ||
+												!(item.is_stock_item === 0 || item.is_stock_item === false)
 											"
 											prepend-inner-icon="mdi-currency-usd"
 										></v-text-field>
@@ -419,7 +420,13 @@
 							</div>
 
 							<!-- Stock Information Section -->
-							<div class="form-section">
+							<!--
+								Cake Zone: gated on the SAME flag as the item grid. Hiding on-hand
+								from a branch is a deliberate control against stock manipulation,
+								and it was enforced in ItemsSelector but not here - so expanding a
+								cart line showed the figure the whole lockdown exists to hide.
+							-->
+							<div class="form-section" v-if="pos_profile.custom_show_available_qty">
 								<div class="section-header">
 									<v-icon size="small" class="section-icon">mdi-warehouse</v-icon>
 									<span class="section-title">{{ __("Stock Information") }}</span>
