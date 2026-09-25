@@ -1382,6 +1382,16 @@ export default {
 					if (print) {
 						this.print_offline_invoice(this.invoice_doc);
 					}
+					// Reset the SAME state the online path resets. Without this the
+					// sales person stays selected offline, so the next sale silently
+					// inherits the last one - which defeats the whole reason the field
+					// has no default: it is meant to be chosen actively every time, so
+					// nobody credits themselves by habit.
+					vm.customer_credit_dict = [];
+					vm.redeem_customer_credit = false;
+					vm.is_cashback = true;
+					vm.is_credit_return = false;
+					vm.sales_person = "";
 					vm.eventBus.emit("clear_invoice");
 					vm.eventBus.emit("reset_posting_date");
 					vm.back_to_invoice();

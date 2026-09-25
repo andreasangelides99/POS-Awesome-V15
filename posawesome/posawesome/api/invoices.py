@@ -359,6 +359,19 @@ def update_invoice(data):
     # Set missing values first
     invoice_doc.set_missing_values()
 
+    # ERPNext warns "Payment methods refreshed. Please review before proceeding."
+    # whenever update_multi_mode_option() rebuilt rows that already existed. It is
+    # telling the cashier to review the very thing the loop below immediately puts
+    # back - so on a sync it fires once per invoice, bottom right, for a problem
+    # already corrected by the time she reads it. Drop that one message and nothing
+    # else; a genuine warning raised by set_missing_values still gets through.
+    _noise = "Payment methods refreshed"
+    if getattr(frappe.local, "message_log", None):
+        frappe.local.message_log = [
+            _m for _m in frappe.local.message_log
+            if _noise not in str((_m or {}).get("message", "") if isinstance(_m, dict) else _m)
+        ]
+
     # Cake Zone: restore the payment amounts wiped above. Only fills rows left at zero, so a
     # legitimately recalculated amount is never overwritten.
     if incoming_payments:
