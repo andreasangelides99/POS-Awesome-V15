@@ -281,7 +281,7 @@
 							</div>
 
 							<!-- Pricing Section -->
-							<div class="form-section">
+							<div class="form-section" v-if="pricingEditable(item)">
 								<div class="section-header">
 									<v-icon size="small" class="section-icon">mdi-currency-usd</v-icon>
 									<span class="section-title">{{ __("Pricing & Discounts") }}</span>
@@ -749,6 +749,27 @@ export default {
 		},
 	},
 	methods: {
+		/*
+		 * Cake Zone: is ANYTHING in the Pricing & Discounts panel changeable on
+		 * this line? If not, the panel is five greyed boxes repeating the rate and
+		 * amount already shown on the row itself - noise that invites a cashier to
+		 * poke at a control that does nothing, and that makes the one line where
+		 * the price CAN be typed (an event cake) look identical to the ones where
+		 * it cannot.
+		 *
+		 * Driven by the same flags as the fields, so switching item discounts on
+		 * brings the panel back by itself - no second decision to remember.
+		 */
+		pricingEditable(item) {
+			if (!item) return false;
+			if (item.posa_is_replace || item.posa_offer_applied) return false;
+			const p = this.pos_profile || {};
+			const nonStock = item.is_stock_item === 0 || item.is_stock_item === false;
+			if (p.posa_allow_user_to_edit_rate && nonStock) return true;
+			if (p.posa_allow_user_to_edit_item_discount) return true;
+			if (p.posa_allow_price_list_rate_change) return true;
+			return false;
+		},
 		onDragOverFromSelector(event) {
 			// Check if drag data is from item selector
 			const dragData = event.dataTransfer.types.includes("application/json");
