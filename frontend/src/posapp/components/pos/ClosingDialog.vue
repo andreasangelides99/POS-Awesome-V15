@@ -21,6 +21,56 @@
 
 				<v-card-text class="pa-0 white-background">
 					<v-container class="pa-6">
+						<v-row v-if="floatKept">
+							<v-col cols="12" class="pa-1">
+								<div class="table-header mb-4">
+									<h4 class="text-h6 text-grey-darken-2 mb-1">
+										{{ __("Count the drawer") }}
+									</h4>
+									<p class="text-body-2 text-grey">
+										{{ __("Every note and coin. The total below becomes the cash you declare.") }}
+									</p>
+								</div>
+								<v-row dense>
+									<v-col v-for="d in denominations" :key="d.key" cols="6" sm="4" md="2">
+										<v-text-field
+											v-model.number="d.count"
+											:label="d.label"
+											type="number"
+											min="0"
+											density="compact"
+											variant="outlined"
+											color="primary"
+											hide-details
+											:bg-color="isDarkTheme ? '#1E1E1E' : 'white'"
+											class="dark-field"
+											@update:model-value="applyCount"
+										></v-text-field>
+									</v-col>
+								</v-row>
+								<v-row dense class="mt-2">
+									<v-col cols="12" sm="4">
+										<v-text-field :label="__('Cash counted')" :model-value="fmt(cashCounted)"
+											density="compact" variant="outlined" hide-details disabled
+											class="dark-field"></v-text-field>
+									</v-col>
+									<v-col cols="12" sm="4">
+										<v-text-field :label="__('Float kept in the till')" :model-value="fmt(floatKept)"
+											density="compact" variant="outlined" hide-details disabled
+											class="dark-field"></v-text-field>
+									</v-col>
+									<v-col cols="12" sm="4">
+										<v-text-field :label="__('CASH TO BANK')" :model-value="fmt(cashToBank)"
+											density="compact" variant="outlined" hide-details disabled
+											color="primary" class="dark-field"></v-text-field>
+									</v-col>
+								</v-row>
+								<p class="text-body-2 text-grey mt-2">
+									{{ __("Bank the cash-to-bank figure, coins included, and keep exactly the float. The deposit slip must show this amount.") }}
+								</p>
+							</v-col>
+						</v-row>
+
 						<v-row>
 							<v-col cols="12" class="pa-1">
 								<div class="table-header mb-4">
@@ -117,6 +167,20 @@ export default {
 		closingDialog: false,
 		itemsPerPage: 20,
 		dialog_data: {},
+		// South African denominations in circulation. 1c, 2c and 5c went in 2002.
+		denominations: [
+			{ key: "custom_n_r200", label: "R200", value: 200, count: null },
+			{ key: "custom_n_r100", label: "R100", value: 100, count: null },
+			{ key: "custom_n_r50", label: "R50", value: 50, count: null },
+			{ key: "custom_n_r20", label: "R20", value: 20, count: null },
+			{ key: "custom_n_r10", label: "R10", value: 10, count: null },
+			{ key: "custom_n_r5", label: "R5", value: 5, count: null },
+			{ key: "custom_n_r2", label: "R2", value: 2, count: null },
+			{ key: "custom_n_r1", label: "R1", value: 1, count: null },
+			{ key: "custom_n_c50", label: "50c", value: 0.5, count: null },
+			{ key: "custom_n_c20", label: "20c", value: 0.2, count: null },
+			{ key: "custom_n_c10", label: "10c", value: 0.1, count: null },
+		],
 		pos_profile: "",
 		headers: [
 			{
@@ -147,6 +211,24 @@ export default {
 		close_dialog() {
 			this.closingDialog = false;
 		},
+		fmt(v) {
+			return `${this.currencySymbol(this.pos_profile?.currency)} ${(v || 0).toFixed(2)}`;
+		},
+		/* Write the count onto the payload AND onto the Cash row, so one number never
+		   lives in two places disagreeing. The server recomputes it all on validate
+		   using the real Mode of Payment types, so this is convenience, not the gate. */
+		applyCount() {
+			if (!this.floatKept) return;
+			this.denominations.forEach((d) => {
+				this.dialog_data[d.key] = parseFloat(d.count) || 0;
+			});
+			const total = this.cashCounted;
+			(this.dialog_data.payment_reconciliation || []).forEach((r) => {
+				if (String(r.mode_of_payment || "").toLowerCase().includes("cash")) {
+					r.closing_amount = total;
+				}
+			});
+		},
 		submit_dialog() {
 			const invalid = (this.dialog_data.payments || []).some((p) =>
 				isNaN(parseFloat(p.closing_amount)),
@@ -161,6 +243,19 @@ export default {
 	},
 
 	computed: {
+		/* The float is CONFIGURED on the till, never typed - an imprecise float is a
+		   place to hide a shortage. If it is not set, the pad stays hidden and the
+		   dialog behaves exactly as it did before. */
+		floatKept() {
+			return parseFloat(this.pos_profile?.custom_cash_float) || 0;
+		},
+		cashCounted() {
+			return this.denominations.reduce(
+				(t, d) => t + (parseFloat(d.count) || 0) * d.value, 0);
+		},
+		cashToBank() {
+			return Math.max(0, this.cashCounted - this.floatKept);
+		},
 		isDarkTheme() {
 			return this.$theme.current === "dark";
 		},
