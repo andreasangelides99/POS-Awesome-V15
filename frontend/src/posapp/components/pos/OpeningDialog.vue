@@ -81,6 +81,9 @@
 											variant="outlined"
 											color="primary"
 											hide-details
+											:readonly="item.locked"
+											:hint="item.locked ? __('Fixed float for this till') : ''"
+											:persistent-hint="item.locked"
 											:prefix="currencySymbol(item.currency)"
 											class="amount-input"
 										/>
@@ -190,10 +193,15 @@ export default {
 			this.payments_methods = [];
 			this.payments_method_data.forEach((element) => {
 				if (element.parent === val) {
+					// A configured float is prefilled and LOCKED. The server forces it
+					// anyway, so letting it be typed would only mean showing a figure
+					// that silently changes on save.
+					const fixed = parseFloat(element.cash_float) || 0;
 					this.payments_methods.push({
 						mode_of_payment: element.mode_of_payment,
-						amount: 0,
+						amount: fixed,
 						currency: element.currency,
+						locked: fixed > 0,
 					});
 				}
 			});

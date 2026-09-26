@@ -74,6 +74,13 @@ def get_opening_dialog_data():
         mode["currency"] = frappe.get_cached_value(
             "POS Profile", mode["parent"], "currency"
         )
+        # Cake Zone: the float is a property of the TILL, not a number somebody
+        # types each morning. Sent here so the dialog can show it locked rather
+        # than accept a figure the server then silently overrides - a number that
+        # quietly changes is worse than no number at all.
+        mode["cash_float"] = frappe.get_cached_value(
+            "POS Profile", mode["parent"], "custom_cash_float"
+        )
 
     return data
 
