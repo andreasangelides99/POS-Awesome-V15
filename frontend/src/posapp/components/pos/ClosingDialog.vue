@@ -263,6 +263,19 @@ export default {
 
 	created: function () {
 		this.eventBus.on("open_ClosingDialog", (data) => {
+			/* Clear the denomination pad on EVERY open. This component is mounted
+			   once and reused, so without this the counts from the previous close
+			   are still sitting there - and a drawer that happens to look right
+			   would be declared without anybody recounting it. Exactly the stale
+			   -state trap the sales person had in the offline submit path.
+
+			   dialog_data is deliberately NOT touched: the server falls back to the
+			   typed amount when no denominations are entered, so zeroing the Cash
+			   row here would overwrite a fresh payload for no reason. applyCount
+			   takes over the moment she types the first number. */
+			this.denominations.forEach((d) => {
+				d.count = null;
+			});
 			this.closingDialog = true;
 			this.dialog_data = data;
 		});
