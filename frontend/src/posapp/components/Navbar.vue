@@ -124,7 +124,7 @@ import ServerUsageGadget from "./navbar/ServerUsageGadget.vue";
 import DatabaseUsageGadget from "./navbar/DatabaseUsageGadget.vue";
 import posLogo from "./pos/pos.png";
 import { forceClearAllCache, getOpeningStorage } from "../../offline/cache.js";
-import { maySeeShiftReports } from "../utils/shiftReports.js";
+import { maySeeXReport } from "../utils/shiftReports.js";
 import { silentPrint } from "../plugins/print.js";
 import { clearAllCaches } from "../../utils/clearAllCaches.js";
 import { isOffline } from "../../offline/index.js";
@@ -224,7 +224,8 @@ export default {
 	},
 	computed: {
 		canPrintShiftReports() {
-			return maySeeShiftReports();
+			// head office only - see utils/shiftReports.js
+			return maySeeXReport();
 		},
 		appBarColor() {
 			return this.isDark ? this.$vuetify.theme.themes.dark.colors.surface : "white";

@@ -8,7 +8,7 @@ import {
     setTaxTemplate,
 } from "../../offline/index.js";
 import { silentPrint } from "../plugins/print.js";
-import { maySeeShiftReports } from "../utils/shiftReports.js";
+import { maySeeZReport } from "../utils/shiftReports.js";
 
 // Not an error - just "this user does not get a Z report".
 class SkipZReport extends Error {}
@@ -129,7 +129,7 @@ export function usePosShift(openDialog) {
                     // closes; the supervisor prints the Z afterwards.
                     const silent = !!pos_profile.value?.posa_silent_print;
                     try {
-                        if (!maySeeShiftReports()) {
+                        if (!maySeeZReport()) {
                             throw new SkipZReport();
                         }
                         const url =
