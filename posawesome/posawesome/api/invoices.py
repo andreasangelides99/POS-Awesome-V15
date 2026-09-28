@@ -26,6 +26,17 @@ from posawesome.posawesome.api.utilities import (
 from .items import get_stock_availability
 
 
+# Cake Zone: what a payment row carries BESIDES its amount, and therefore what has to survive
+# set_missing_values() rebuilding the payments table. reference_no is ERPNext's own field; the
+# three custom ones are the EFT details the cashier types. Losing them would strand a payment
+# in one shared EFT account with nothing tying it to an order.
+PAYMENT_DETAIL_FIELDS = (
+    "reference_no",
+    "custom_payment_date",
+    "custom_payer_name",
+    "custom_paying_bank",
+)
+
 def _sanitize_item_name(name: str) -> str:
     """Strip HTML and limit length for item names."""
     if not name:
@@ -351,10 +362,30 @@ def update_invoice(data):
     for _p in invoice_doc.get("payments") or []:
         if _p.get("mode_of_payment"):
             _entry = incoming_payments.setdefault(
-                _p.mode_of_payment, {"amount": 0.0, "base_amount": 0.0}
+                _p.mode_of_payment, {"amount": 0.0, "base_amount": 0.0, "details": {}}
             )
             _entry["amount"] += flt(_p.get("amount"))
             _entry["base_amount"] += flt(_p.get("base_amount"))
+            # The rebuild wipes the EFT details the cashier typed just as thoroughly as it
+            # wipes the amount, so they ride along in the same snapshot. Rows are merged by
+            # mode, so keep the FIRST non-blank of each and log a conflict rather than
+            # silently discarding one customer's reference.
+            for _f in PAYMENT_DETAIL_FIELDS:
+                _v = _p.get(_f)
+                if _v in (None, ""):
+                    continue
+                _held = _entry["details"].get(_f)
+                if _held in (None, ""):
+                    _entry["details"][_f] = _v
+                elif str(_held) != str(_v):
+                    frappe.log_error(
+                        title="POS payment detail conflict",
+                        message=(
+                            f"Invoice {invoice_doc.get('name') or '(new)'}: two "
+                            f"{_p.mode_of_payment} rows disagree on {_f} "
+                            f"({_held!r} vs {_v!r}). Kept the first."
+                        ),
+                    )
 
     # Set missing values first
     invoice_doc.set_missing_values()
@@ -377,12 +408,19 @@ def update_invoice(data):
     if incoming_payments:
         for _p in invoice_doc.get("payments") or []:
             _src = incoming_payments.pop(_p.mode_of_payment, None)
-            if _src and not flt(_p.amount):
+            if not _src:
+                continue
+            if not flt(_p.amount):
                 _p.amount = _src["amount"]
                 # Set it even when it is 0. The rebuilt row has base_amount NONE, and
                 # a zero is a real answer - a tender the customer did not use. Left as
                 # None it blows up the return path below on abs(None).
                 _p.base_amount = _src["base_amount"]
+            # Restored regardless of amount: the details are what the cashier typed and
+            # they are the only link between one shared EFT account and this order.
+            for _f, _v in (_src.get("details") or {}).items():
+                if _p.get(_f) in (None, ""):
+                    _p.set(_f, _v)
         _dropped = {m: v["amount"] for m, v in incoming_payments.items() if flt(v["amount"])}
         if _dropped:
             frappe.log_error(

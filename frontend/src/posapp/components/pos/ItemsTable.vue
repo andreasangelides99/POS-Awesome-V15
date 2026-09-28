@@ -283,7 +283,7 @@
 							<!-- Pricing Section -->
 							<div class="form-section" v-if="pricingEditable(item)">
 								<div class="section-header">
-									<v-icon size="small" class="section-icon">mdi-currency-usd</v-icon>
+									<v-icon size="small" class="section-icon">mdi-percent</v-icon>
 									<span class="section-title">{{ __("Pricing & Discounts") }}</span>
 								</div>
 								<div class="form-row">
@@ -308,7 +308,7 @@
 												!!item.posa_offer_applied ||
 												!(item.is_stock_item === 0 || item.is_stock_item === false)
 											"
-											prepend-inner-icon="mdi-currency-usd"
+											:prefix="currencySymbol(pos_profile.currency)"
 										></v-text-field>
 									</div>
 									<div class="form-field">

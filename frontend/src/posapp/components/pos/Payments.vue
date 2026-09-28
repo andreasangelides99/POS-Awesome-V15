@@ -122,6 +122,65 @@
 							</v-btn>
 						</v-col>
 
+						<!-- Cake Zone: EFT details. Every branch's EFTs land in one account, so
+						     without these four head office cannot find the money on a statement. -->
+						<v-col cols="12" v-if="is_eft_payment(payment)" class="pt-0">
+							<v-row dense>
+								<v-col cols="12" sm="6">
+									<v-text-field
+										density="compact"
+										variant="outlined"
+										color="primary"
+										:label="frappe._('Reference')"
+										:bg-color="isDarkTheme ? '#1E1E1E' : 'white'"
+										class="dark-field"
+										hide-details
+										v-model="payment.reference_no"
+										@focus="default_eft_details(payment)"
+									></v-text-field>
+								</v-col>
+								<v-col cols="12" sm="6">
+									<v-text-field
+										density="compact"
+										variant="outlined"
+										color="primary"
+										type="date"
+										:label="frappe._('Paid On')"
+										:bg-color="isDarkTheme ? '#1E1E1E' : 'white'"
+										class="dark-field"
+										hide-details
+										v-model="payment.custom_payment_date"
+										@focus="default_eft_details(payment)"
+									></v-text-field>
+								</v-col>
+								<v-col cols="12" sm="6">
+									<v-text-field
+										density="compact"
+										variant="outlined"
+										color="primary"
+										:label="frappe._('Payer Name')"
+										:bg-color="isDarkTheme ? '#1E1E1E' : 'white'"
+										class="dark-field"
+										hide-details
+										v-model="payment.custom_payer_name"
+									></v-text-field>
+								</v-col>
+								<v-col cols="12" sm="6">
+									<v-select
+										density="compact"
+										variant="outlined"
+										color="primary"
+										:label="frappe._('Paying Bank')"
+										:bg-color="isDarkTheme ? '#1E1E1E' : 'white'"
+										class="dark-field"
+										hide-details
+										:items="bank_list"
+										v-model="payment.custom_paying_bank"
+									></v-select>
+								</v-col>
+							</v-row>
+						</v-col>
+
 						<!-- M-Pesa Payment Button (if payment is M-Pesa) -->
 						<v-col cols="12" v-if="is_mpesa_c2b_payment(payment)" class="pl-3">
 							<v-btn block color="success" theme="dark" @click="mpesa_c2b_dialog(payment)">
@@ -812,6 +871,8 @@ export default {
 			credit_due_presets: [7, 14, 30], // Preset options for due days
 			customer_info: "", // Customer info
 			mpesa_modes: [], // List of available M-Pesa modes
+			eft_modes: [], // Cake Zone: modes that must capture EFT details
+			bank_list: [], // Cake Zone: banks a customer can pay from
 			sales_persons: [], // List of sales persons
 			sales_person: "", // Selected sales person
 			addresses: [], // List of customer addresses
@@ -1819,6 +1880,38 @@ export default {
 						});
 				});
 		},
+		// Cake Zone: which modes ask for EFT details, and the banks to offer. Fetched once on
+		// profile registration and keyed off a FLAG on the mode, never its name, so renaming
+		// the mode or adding a second EFT-style one needs no change here.
+		get_eft_setup() {
+			const vm = this;
+			frappe.call({
+				method: "cakezone_erp.api.eft.get_till_setup",
+				async: true,
+				callback: function (r) {
+					vm.eft_modes = (!r.exc && r.message && r.message.modes) || [];
+					vm.bank_list = (!r.exc && r.message && r.message.banks) || [];
+				},
+			});
+		},
+		// Cake Zone: an EFT row asks for four things, because head office has ONE eft account
+		// carrying all 33 branches. The reference is the only link from that statement back to
+		// this order, so the server refuses the sale without it.
+		is_eft_payment(payment) {
+			return this.eft_modes.includes(payment.mode_of_payment) && Number(payment.amount) != 0;
+		},
+		// Cake Zone: the order number is the reference we ASK the customer to use, so it is the
+		// sensible default - but it must stay editable, because what appears on the statement is
+		// whatever they actually typed into their banking app. Idempotent, so it is safe to call
+		// from a focus handler.
+		default_eft_details(payment) {
+			if (!payment.reference_no && this.invoice_doc && this.invoice_doc.custom_event_order_no) {
+				payment.reference_no = this.invoice_doc.custom_event_order_no;
+			}
+			if (!payment.custom_payment_date) {
+				payment.custom_payment_date = frappe.datetime.get_today();
+			}
+		},
 		// Get M-Pesa payment modes from backend
 		get_mpesa_modes() {
 			const vm = this;
@@ -2059,6 +2152,7 @@ export default {
 				this.pos_profile = data.pos_profile;
 				this.stock_settings = data.stock_settings || {};
 				this.get_mpesa_modes();
+				this.get_eft_setup();
 			});
 			this.eventBus.on("add_the_new_address", (data) => {
 				this.addresses.push(data);
