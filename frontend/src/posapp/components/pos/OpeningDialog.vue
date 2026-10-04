@@ -19,6 +19,23 @@
 
 				<!-- Content Section - Optimized for minimal scrolling -->
 				<v-card-text class="opening-dialog-content">
+					<!-- A refusal from the server is rendered HERE, inside the dialog,
+					     and not through frappe.msgprint. frappe.call already msgprints
+					     _server_messages, but this is a Vuetify v-dialog with its own
+					     overlay on top of the desk, so that modal comes up behind it and
+					     the cashier sees a stalled button and nothing else. In the card
+					     it cannot be covered. -->
+					<v-alert
+						v-if="error_message"
+						type="error"
+						variant="tonal"
+						density="compact"
+						class="mb-3"
+						closable
+						@click:close="error_message = ''"
+					>
+						<span v-html="error_message"></span>
+					</v-alert>
 					<v-container class="pa-0">
 						<v-row>
 							<!-- Company and POS Profile in same row for space efficiency -->
@@ -144,6 +161,7 @@ export default {
 			isOpen: this.dialog ? this.dialog : false,
 			dialog_data: {},
 			is_loading: false,
+			error_message: "",
 			companies: [],
 			company: "",
 			pos_profiles_data: [],
@@ -256,6 +274,7 @@ export default {
 			}
 
 			this.is_loading = true;
+			this.error_message = "";
 			const vm = this;
 
 			return frappe
@@ -274,8 +293,46 @@ export default {
 							console.error("Failed to cache opening data", e);
 						}
 						vm.close_opening_dialog();
-						vm.is_loading = false;
 					}
+				})
+				.catch((e) => {
+					// WITHOUT THIS THE DIALOG SPINS FOR EVER. is_loading was only
+					// cleared inside .then(), and only when r.message came back - so
+					// ANY refusal from the server left the button in its loading state
+					// with nothing on screen to say why. Found 4 Oct 2026, when the
+					// one-shift-a-day rule started refusing a second opening: the
+					// cashier saw a stalled button and no error at all.
+					//
+					// The server's own message is read off frappe.last_response rather
+					// than off `e`, because frappe.call rejects with the xhr and the
+					// readable text lives in _server_messages - a JSON array of JSON
+					// strings, hence the double parse.
+					let message = "";
+					try {
+						const raw = (frappe.last_response || {})._server_messages;
+						if (raw) {
+							message = JSON.parse(raw)
+								.map((m) => {
+									try {
+										return JSON.parse(m).message || "";
+									} catch (inner) {
+										return String(m);
+									}
+								})
+								.filter(Boolean)
+								.join("<br>");
+						}
+					} catch (err) {
+						// fall through to the generic text below
+					}
+					vm.error_message =
+						message || __("The server would not open this shift. Ask head office.");
+					console.error("create_opening_voucher failed", e);
+				})
+				.finally(() => {
+					// Always, on success and on refusal alike, so the cashier can read
+					// the message and try something else.
+					vm.is_loading = false;
 				});
 		},
 
