@@ -964,7 +964,13 @@ def search_invoices_for_return(
             if filtered_items:
                 # Create a copy of invoice with filtered items
                 filtered_invoice = frappe.get_doc(doctype, invoice.name)
-                filtered_invoice.items = filtered_items
+                # Cake Zone: append() rather than assigning plain dicts. A frappe._dict
+                # answers None for any missing attribute, so serialising the response
+                # called None as as_dict() and the WHOLE search failed with "'NoneType'
+                # object is not callable" as soon as one listed sale had a partial refund.
+                filtered_invoice.set("items", [])
+                for row in filtered_items:
+                    filtered_invoice.append("items", row)
                 data.append(filtered_invoice)
         else:
             data.append(invoice_doc)
