@@ -89,7 +89,15 @@
 
 				<!-- Payment Inputs (All Payment Methods) -->
 				<div v-if="is_cashback">
-					<v-row class="payments pa-1" v-for="payment in invoice_doc.payments" :key="payment.name">
+					<!-- Cake Zone: a refund goes back in CASH only (owner, 13 Oct 2026), so on a return
+				the card and EFT rows are hidden. Presentation only - the control is
+				cakezone_erp.api.tills.require_cash_refund on the server. -->
+					<v-row
+						class="payments pa-1"
+						v-for="payment in invoice_doc.payments"
+						:key="payment.name"
+						v-show="!invoice_doc.is_return || payment.mode_of_payment === 'Cash'"
+					>
 						<v-col cols="6" v-if="!is_mpesa_c2b_payment(payment)">
 							<v-text-field
 								density="compact"
