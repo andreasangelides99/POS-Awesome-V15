@@ -47,40 +47,23 @@
 						></v-text-field>
 					</v-col>
 
-					<!-- Paid Change (if applicable) -->
-					<v-col cols="7" v-if="credit_change > 0 && !invoice_doc.is_return">
+					<!-- Cake Zone (14 Oct 2026): ONE read-only box for the cash to hand back. POS
+					Awesome showed "Paid Change" (always 0 here, because diff_payment is clamped
+					at zero) beside an EDITABLE "Credit Change" holding the real change, and typing
+					into that one turns change into customer credit. Staff need one figure. -->
+					<v-col cols="12" v-if="credit_change > 0 && !invoice_doc.is_return">
 						<v-text-field
 							variant="solo"
 							color="primary"
-							:label="frappe._('Paid Change')"
-							:bg-color="isDarkTheme ? '#1E1E1E' : 'white'"
-							class="dark-field sleek-field"
-							:model-value="formatCurrency(paid_change)"
-							:prefix="currencySymbol(invoice_doc.currency)"
-							:rules="paid_change_rules"
-							density="compact"
-							readonly
-							type="text"
-							@click="showPaidChange"
-						></v-text-field>
-					</v-col>
-
-					<!-- Credit Change (if applicable) -->
-					<v-col cols="5" v-if="credit_change > 0 && !invoice_doc.is_return">
-						<v-text-field
-							variant="solo"
-							color="primary"
-							:label="frappe._('Credit Change')"
+							:label="frappe._('Change to give')"
 							:bg-color="isDarkTheme ? '#1E1E1E' : 'white'"
 							class="dark-field sleek-field"
 							:model-value="formatCurrency(credit_change)"
 							:prefix="currencySymbol(invoice_doc.currency)"
 							density="compact"
+							readonly
+							hide-details
 							type="text"
-							@change="
-								setFormatedCurrency(this, 'credit_change', null, false, $event);
-								updateCreditChange(this.credit_change);
-							"
 						></v-text-field>
 					</v-col>
 				</v-row>
@@ -114,10 +97,10 @@
 									(v) =>
 										!payment.mode_of_payment.toLowerCase().includes('cash') ||
 										this.is_credit_sale ||
-										v >=
+										this.total_payments >=
 											(this.invoice_doc.rounded_total ||
 												this.invoice_doc.grand_total) ||
-										'Cash payment cannot be less than invoice total when credit sale is off',
+										'The payments do not cover the total yet',
 								]"
 								:prefix="currencySymbol(invoice_doc.currency)"
 								@focus="set_rest_amount(payment.idx)"
@@ -383,7 +366,7 @@
 							:bg-color="isDarkTheme ? '#1E1E1E' : 'white'"
 							class="dark-field sleek-field"
 							hide-details
-							:model-value="formatCurrency(diff_payment, displayCurrency)"
+							:model-value="formatCurrency(diff_payment > 0 ? diff_payment : credit_change, displayCurrency)"
 							readonly
 							:prefix="currencySymbol()"
 							persistent-placeholder
@@ -1273,29 +1256,26 @@ export default {
 				frappe.utils.play_sound("error");
 				return;
 			}
-			// Validate cash payments when credit sale is off
-			if (!this.is_credit_sale && !this.invoice_doc.is_return) {
-				let has_cash_payment = false;
-				let cash_amount = 0;
+			// Cake Zone (14 Oct 2026): a sale may be split across cash, card and EFT. POS
+			// Awesome refused any cash below the full total, which made a split impossible.
+			// What must hold instead is that change only comes out of the drawer, so card and
+			// EFT together may not be more than the sale. The server enforces the same rule
+			// (cakezone_erp.api.tills.change_from_cash_only); this tells the cashier first.
+			if (!this.invoice_doc.is_return) {
+				const sale_total = this.invoice_doc.rounded_total || this.invoice_doc.grand_total;
+				let non_cash = 0;
 				this.invoice_doc.payments.forEach((payment) => {
-					if (payment.mode_of_payment.toLowerCase().includes("cash")) {
-						has_cash_payment = true;
-						cash_amount = this.flt(payment.amount);
+					if (!payment.mode_of_payment.toLowerCase().includes("cash")) {
+						non_cash += this.flt(payment.amount);
 					}
 				});
-				if (has_cash_payment && cash_amount > 0) {
-					if (
-						!this.pos_profile.posa_allow_partial_payment &&
-						cash_amount < (this.invoice_doc.rounded_total || this.invoice_doc.grand_total) &&
-						(this.invoice_doc.rounded_total || this.invoice_doc.grand_total) > 0
-					) {
-						this.eventBus.emit("show_message", {
-							title: `Cash payment cannot be less than invoice total when partial payment is not allowed`,
-							color: "error",
-						});
-						frappe.utils.play_sound("error");
-						return;
-					}
+				if (sale_total > 0 && non_cash > sale_total + 0.005) {
+					this.eventBus.emit("show_message", {
+						title: __("Card and EFT come to more than the sale. Only cash can give change."),
+						color: "error",
+					});
+					frappe.utils.play_sound("error");
+					return;
 				}
 			}
 			// Validate partial payments only if not credit sale and invoice total is not zero

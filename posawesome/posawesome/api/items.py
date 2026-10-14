@@ -620,7 +620,7 @@ def get_items_details(pos_profile, items_data, price_list=None, customer=None):
 			return []
 		return frappe.get_all(
 			"Item",
-			fields=["name", "has_batch_no", "has_serial_no", "stock_uom"],
+			fields=["name", "has_batch_no", "has_serial_no", "stock_uom", "is_stock_item"],
 			filters={"name": ["in", item_codes]},
 		)
 
@@ -781,6 +781,10 @@ def get_items_details(pos_profile, items_data, price_list=None, customer=None):
 				"item_uoms": uoms or [],
 				"item_barcode": barcode_map.get(item_code, []),
 				"actual_qty": stock_map.get(item_code, 0) or 0,
+				# Cake Zone: the client REPLACES its item rows with these, so a field left out
+				# here is lost. Without is_stock_item an event cake (non-stock) looked like a
+				# stock item on a till's first load: no Rate box and a negative-stock warning.
+				"is_stock_item": meta.get("is_stock_item"),
 				"has_batch_no": meta.get("has_batch_no"),
 				"has_serial_no": meta.get("has_serial_no"),
 				"batch_no_data": batch_map.get(item_code, []),

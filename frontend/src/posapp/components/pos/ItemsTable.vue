@@ -246,7 +246,12 @@
 											:disabled="!!item.posa_is_replace"
 											prepend-inner-icon="mdi-numeric"
 										></v-text-field>
-										<div v-if="item.max_qty !== undefined" class="text-caption mt-1">
+										<!-- Cake Zone: on-hand stock is hidden from branch staff (custom_show_available_qty,
+										0 on every till) - this caption was the one place the lockdown missed. -->
+										<div
+											v-if="item.max_qty !== undefined && pos_profile.custom_show_available_qty"
+											class="text-caption mt-1"
+										>
 											{{
 												__("In stock: {0}", [
 													formatFloat(
