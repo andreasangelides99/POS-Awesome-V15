@@ -21,7 +21,7 @@
 
 				<v-card-text class="pa-0 white-background">
 					<v-container class="pa-6">
-						<v-row v-if="floatKept">
+						<v-row v-if="configuredFloat">
 							<v-col cols="12" class="pa-1">
 								<div class="table-header mb-4">
 									<h4 class="text-h6 text-grey-darken-2 mb-1">
@@ -218,7 +218,7 @@ export default {
 		   lives in two places disagreeing. The server recomputes it all on validate
 		   using the real Mode of Payment types, so this is convenience, not the gate. */
 		applyCount() {
-			if (!this.floatKept) return;
+			if (!this.configuredFloat) return;
 			this.denominations.forEach((d) => {
 				this.dialog_data[d.key] = parseFloat(d.count) || 0;
 			});
@@ -246,8 +246,15 @@ export default {
 		/* The float is CONFIGURED on the till, never typed - an imprecise float is a
 		   place to hide a shortage. If it is not set, the pad stays hidden and the
 		   dialog behaves exactly as it did before. */
-		floatKept() {
+		configuredFloat() {
 			return parseFloat(this.pos_profile?.custom_cash_float) || 0;
+		},
+		/* What stays in the drawer: the configured float, or all of it when the drawer
+		   holds less (14 Oct 2026 - a below-float till still closes, banks nothing, and
+		   the next opening carries this figure). Mirrors cashup.count_the_drawer. */
+		floatKept() {
+			if (!this.cashCounted) return this.configuredFloat;
+			return Math.min(this.configuredFloat, this.cashCounted);
 		},
 		cashCounted() {
 			return this.denominations.reduce(
