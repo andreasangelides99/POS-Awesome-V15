@@ -132,6 +132,15 @@ export default {
 		},
 	},
 	watch: {
+		// Cake Zone: restore this till's last receipt id (see set_last_invoice).
+		"posProfile.name"(name) {
+			if (!name || this.lastInvoiceId) return;
+			try {
+				this.lastInvoiceId = localStorage.getItem("cz_last_invoice:" + name) || "";
+			} catch (e) {
+				/* storage unavailable */
+			}
+		},
 		networkOnline(newVal, oldVal) {
 			if (newVal && !oldVal) {
 				this.refreshTaxInclusiveSetting();
@@ -240,6 +249,15 @@ export default {
 				// Track last submitted invoice id
 				this.eventBus.on("set_last_invoice", (invoiceId) => {
 					this.lastInvoiceId = invoiceId;
+					// Cake Zone: remember it per till, so "Print Last Invoice" still works
+					// after the page is reloaded (it used to be greyed out until the next sale).
+					try {
+						if (this.posProfile && this.posProfile.name) {
+							localStorage.setItem("cz_last_invoice:" + this.posProfile.name, invoiceId);
+						}
+					} catch (e) {
+						/* storage unavailable: the in-memory id still works */
+					}
 				});
 
 				this.eventBus.on("data-loaded", (name) => {
