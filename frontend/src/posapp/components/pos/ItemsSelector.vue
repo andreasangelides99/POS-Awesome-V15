@@ -136,13 +136,6 @@
 												class="mb-2"
 											></v-switch>
 											<v-switch
-												v-model="temp_hide_zero_rate_items"
-												:label="__('Hide zero rated items')"
-												hide-details
-												density="compact"
-												color="primary"
-											></v-switch>
-											<v-switch
 												v-model="temp_enable_custom_items_per_page"
 												:label="__('Custom items per page')"
 												hide-details
@@ -2694,9 +2687,9 @@ export default {
 					if (typeof opts.hide_qty_decimals === "boolean") {
 						this.hide_qty_decimals = opts.hide_qty_decimals;
 					}
-					if (typeof opts.hide_zero_rate_items === "boolean") {
-						this.hide_zero_rate_items = opts.hide_zero_rate_items;
-					}
+					// Cake Zone: "Hide zero rated items" is removed (owner, 15 Oct 2026). Event
+					// cakes are the only unpriced items, so ticking it hid exactly them. A value
+					// saved before the removal is ignored, never restored.
 					if (typeof opts.enable_custom_items_per_page === "boolean") {
 						this.enable_custom_items_per_page = opts.enable_custom_items_per_page;
 					}
@@ -2762,11 +2755,6 @@ export default {
 					(item) =>
 						item.item_group && item.item_group.toLowerCase() === this.item_group.toLowerCase(),
 				);
-			}
-
-			// Apply zero rate filter
-			if (this.hide_zero_rate_items) {
-				filteredItems = filteredItems.filter((item) => parseFloat(item.rate || 0) > 0);
 			}
 
 			// Apply template/variant filter
