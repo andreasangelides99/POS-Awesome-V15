@@ -4,7 +4,12 @@ export async function clearLocalStorage(keys = []) {
 		if (keys.length) {
 			keys.forEach((k) => localStorage.removeItem(k));
 		} else {
-			Object.keys(localStorage).forEach((key) => localStorage.removeItem(key));
+			// Cake Zone: the till PC setup survives Clear Cache (the owner, 16 Oct 2026).
+			// It says which drawer this PC is; losing it here would make every cache
+			// clear a trip to /till-setup.
+			Object.keys(localStorage)
+				.filter((key) => key !== "cz_till_device")
+				.forEach((key) => localStorage.removeItem(key));
 		}
 		console.log("[ClearAllCaches] localStorage cleared", keys.length ? keys : "all");
 	} catch (e) {

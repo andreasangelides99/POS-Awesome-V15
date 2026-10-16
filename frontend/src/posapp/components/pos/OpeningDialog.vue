@@ -59,6 +59,9 @@
 									:items="pos_profiles"
 									:label="frappe._('POS Profile')"
 									v-model="pos_profile"
+									:readonly="!!bound_profile && !bound_mismatch"
+									:hint="bound_profile && !bound_mismatch ? __('This PC is set up as {0}', [bound_profile]) : ''"
+									:persistent-hint="!!bound_profile && !bound_mismatch"
 									required
 									variant="outlined"
 									color="primary"
@@ -167,6 +170,9 @@ export default {
 			pos_profiles_data: [],
 			pos_profiles: [],
 			pos_profile: "",
+			// Cake Zone: the till this PC is set up as (/till-setup), or "" if none.
+			bound_profile: "",
+			bound_mismatch: false,
 			payments_method_data: [],
 			payments_methods: [],
 			payments_methods_headers: [
@@ -205,6 +211,10 @@ export default {
 					this.pos_profile = "";
 				}
 			});
+			this.apply_till_binding();
+		},
+		pos_profiles_data() {
+			this.apply_till_binding();
 		},
 
 		pos_profile(val) {
@@ -227,6 +237,56 @@ export default {
 	},
 
 	methods: {
+		// Cake Zone: a PC set up at /till-setup opens its own till and no other, so
+		// "Till 1" stays the same drawer and card machine every day (the owner,
+		// 16 Oct 2026). The browser holds the device id; the server's answer wins
+		// when online, the browser's copy is used offline. A PC never set up asks
+		// as before. This prevents mistakes, not fraud.
+		async load_till_binding() {
+			const KEY = "cz_till_device";
+			let dev = null;
+			try {
+				dev = JSON.parse(localStorage.getItem(KEY) || "null");
+			} catch (e) {
+				dev = null;
+			}
+			if (!dev || !dev.device_id) return;
+			this.bound_profile = dev.pos_profile || "";
+			this.apply_till_binding();
+			try {
+				const r = await frappe.call({
+					method: "cakezone_erp.api.till_device.whoami",
+					args: { device_id: dev.device_id },
+				});
+				const server = r && r.message ? r.message : "";
+				this.bound_profile = server;
+				if (server) dev.pos_profile = server;
+				else delete dev.pos_profile;
+				localStorage.setItem(KEY, JSON.stringify(dev));
+			} catch (e) {
+				// offline or refused: keep the browser's copy
+			}
+			this.apply_till_binding();
+		},
+		apply_till_binding() {
+			if (!this.bound_profile) {
+				this.bound_mismatch = false;
+				return;
+			}
+			const allowed = (this.pos_profiles_data || []).map((p) => p.name);
+			if (allowed.includes(this.bound_profile)) {
+				this.bound_mismatch = false;
+				if (this.pos_profiles.includes(this.bound_profile)) {
+					this.pos_profile = this.bound_profile;
+				}
+			} else if (allowed.length) {
+				this.bound_mismatch = true;
+				this.error_message = __(
+					"This PC is set up as {0}, which your login cannot open. Ask head office.",
+					[this.bound_profile],
+				);
+			}
+		},
 		close_opening_dialog() {
 			this.eventBus.emit("close_opening_dialog");
 		},
@@ -270,6 +330,9 @@ export default {
 
 		submit_dialog() {
 			if (!this.payments_methods.length || !this.company || !this.pos_profile) {
+				return;
+			}
+			if (this.bound_profile && (this.bound_mismatch || this.pos_profile !== this.bound_profile)) {
 				return;
 			}
 
@@ -344,6 +407,7 @@ export default {
 
 	mounted() {
 		this.get_opening_dialog_data();
+		this.load_till_binding();
 	},
 
 	beforeUnmount() {
