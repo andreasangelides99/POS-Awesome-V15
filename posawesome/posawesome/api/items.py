@@ -948,6 +948,16 @@ def get_item_detail(item, doc=None, warehouse=None, price_list=None, company=Non
 
 
 @frappe.whitelist()
+def get_non_stock_item_codes():
+	"""Cake Zone: codes of the enabled non-stock items (event cakes, the carrier bag).
+
+	The till patches its cached item rows with this when they lack is_stock_item,
+	instead of re-downloading the whole list.
+	"""
+	return frappe.get_all("Item", filters={"is_stock_item": 0, "disabled": 0}, pluck="name")
+
+
+@frappe.whitelist()
 def get_items_from_barcode(selling_price_list, currency, barcode):
 	search_item = frappe.db.get_value(
 		"Item Barcode",

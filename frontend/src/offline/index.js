@@ -17,7 +17,7 @@ export {
         memoryInitPromise,
         getStoredItems,
         getStoredItemsCount,
-        countStoredItemsMissingStockFlag,
+        patchStoredStockFlags,
         saveItems,
         clearStoredItems,
         getCustomerStorage,

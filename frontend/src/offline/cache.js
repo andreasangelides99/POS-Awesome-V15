@@ -153,18 +153,21 @@ export async function getStoredItemsCount() {
         }
 }
 
-// Cake Zone: rows cached before the server sent is_stock_item lack it, and a
-// non-stock item without the flag is treated as stock by the till.
-export async function countStoredItemsMissingStockFlag() {
+// Cake Zone: rows cached before the item worker kept is_stock_item lack it, and a
+// non-stock item without the flag is treated as stock by the till (event cakes:
+// stock warning, no Rate box). Patch them in place; returns how many were fixed.
+export async function patchStoredStockFlags(nonStockCodes) {
         try {
                 await checkDbHealth();
                 if (!db.isOpen()) await db.open();
                 return await db
                         .table("items")
                         .filter((it) => it.is_stock_item === undefined || it.is_stock_item === null)
-                        .count();
+                        .modify((it) => {
+                                it.is_stock_item = nonStockCodes.has(it.item_code) ? 0 : 1;
+                        });
         } catch (e) {
-                console.error("Failed to check stored items", e);
+                console.error("Failed to patch stored stock flags", e);
                 return 0;
         }
 }

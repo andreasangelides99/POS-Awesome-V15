@@ -428,7 +428,7 @@ import {
 	getLocalStock,
 	isOffline,
 	getStoredItemsCount,
-	countStoredItemsMissingStockFlag,
+	patchStoredStockFlags,
 	initializeStockCache,
 	searchStoredItems,
 	saveItemsBulk,
@@ -1174,22 +1174,35 @@ export default {
 			await this.get_items(true);
 			console.log("[ItemsSelector] forceReloadItems finished");
 		},
+		async patchStockFlags() {
+			try {
+				const res = await frappe.call({
+					method: "posawesome.posawesome.api.items.get_non_stock_item_codes",
+					freeze: false,
+				});
+				const nonStock = new Set(res.message || []);
+				const fixed = await patchStoredStockFlags(nonStock);
+				(this.items || []).forEach((it) => {
+					if (it.is_stock_item === undefined || it.is_stock_item === null) {
+						it.is_stock_item = nonStock.has(it.item_code) ? 0 : 1;
+					}
+				});
+				if (fixed) console.log("[ItemsSelector] patched is_stock_item on cached items", { fixed });
+			} catch (e) {
+				console.error("Failed to patch cached stock flags", e);
+			}
+		},
 		async verifyServerItemCount() {
 			if (isOffline()) {
 				console.log("[ItemsSelector] offline, skipping server item count check");
 				return;
 			}
-			// Cake Zone: a cache written before the server sent is_stock_item is
-			// re-downloaded whole, once. Delta sync never repairs it: it only runs when
-			// the server has MORE items than the cache, and these items never change.
+			// Cake Zone: rows cached before the worker kept is_stock_item are patched
+			// in place, in the background. NOT a forced reload: that raced the till's own
+			// item load and froze it on "Loading item data..." (16 Oct 2026).
 			if (!this._stockFlagHealDone) {
 				this._stockFlagHealDone = true;
-				const stale = await countStoredItemsMissingStockFlag();
-				if (stale > 0) {
-					console.log("[ItemsSelector] cached items missing is_stock_item, reloading", { stale });
-					await this.forceReloadItems();
-					return;
-				}
+				this.patchStockFlags();
 			}
 			try {
 				const localCount = await getStoredItemsCount();
@@ -1382,6 +1395,15 @@ export default {
 		},
 		async backgroundLoadItems(startAfter, syncSince, clearBefore = false, requestToken, loaded = 0) {
 			this.isBackgroundLoading = true;
+			// Cake Zone: a last guard. If the till already has its items, a background
+			// load that stalls for 90s must not keep the overlay over the till.
+			clearTimeout(this._bgLoadWatchdog);
+			this._bgLoadWatchdog = setTimeout(() => {
+				if (this.isBackgroundLoading && this.items && this.items.length) {
+					console.error("[ItemsSelector] background load stalled, releasing the overlay");
+					this.finishBackgroundLoad();
+				}
+			}, 90000);
 			console.log("[ItemsSelector] backgroundLoadItems called", {
 				startAfter,
 				syncSince,
@@ -1395,16 +1417,14 @@ export default {
 			// "no incremental loading" and exit early.
 			if (!limit || limit >= 10000) {
 				console.log("[ItemsSelector] background load skipped due to high limit", { limit });
-				if (loaded === 0) {
-					this.finishBackgroundLoad();
-				}
+				// Cake Zone: always clear it - an abandoned load left the overlay up for ever.
+				this.finishBackgroundLoad();
 				return;
 			}
 			if (this.items_request_token !== requestToken) {
 				console.log("[ItemsSelector] background load token mismatch, aborting");
-				if (loaded === 0) {
-					this.finishBackgroundLoad();
-				}
+				// Cake Zone: always clear it - an abandoned load left the overlay up for ever.
+				this.finishBackgroundLoad();
 				return;
 			}
 			const lastSync = syncSince;
@@ -1432,21 +1452,40 @@ export default {
 					const text = JSON.stringify(res);
 					if (this.items_request_token !== requestToken) {
 						console.log("[ItemsSelector] background load token mismatch after response");
-						if (loaded === 0) {
-							this.finishBackgroundLoad();
-						}
+						// Cake Zone: always clear it - an abandoned load left the overlay up for ever.
+						this.finishBackgroundLoad();
 						return;
 					}
 					let lastItemName = null;
+					const worker = this.itemWorker;
 					const count = await new Promise((resolve) => {
-						this.itemWorker.onmessage = async (ev) => {
+						// Cake Zone: this used to wait for ever. A worker that failed to load,
+						// errored, or had its handler replaced by an overlapping load left the
+						// till on "Loading item data..." for good.
+						const realResolve = resolve;
+						let settled = false;
+						const settle = (n) => {
+							if (settled) return;
+							settled = true;
+							clearTimeout(timer);
+							realResolve(n);
+						};
+						resolve = settle; // the handler below resolves through settle
+						const timer = setTimeout(() => {
+							console.error("[ItemsSelector] item worker did not answer in 30s");
+							settle(0);
+						}, 30000);
+						worker.onerror = (event) => {
+							console.error("Worker error:", event && event.message);
+							settle(0);
+						};
+						worker.onmessage = async (ev) => {
 							if (this.items_request_token !== requestToken) {
 								console.log(
 									"[ItemsSelector] background load token mismatch during worker message",
 								);
-								if (loaded === 0) {
-									this.finishBackgroundLoad();
-								}
+								// Cake Zone: always clear it - an abandoned load left the overlay up for ever.
+								this.finishBackgroundLoad();
 								resolve(0);
 								return;
 							}
@@ -1488,17 +1527,21 @@ export default {
 								resolve(0);
 							}
 						};
-						this.itemWorker.postMessage({
-							type: "parse_and_cache",
-							json: text,
-							priceList: this.customer_price_list || "",
-						});
+						try {
+							worker.postMessage({
+								type: "parse_and_cache",
+								json: text,
+								priceList: this.customer_price_list || "",
+							});
+						} catch (e) {
+							console.error("Failed to post to item worker", e);
+							settle(0);
+						}
 					});
 					if (this.items_request_token !== requestToken) {
 						console.log("[ItemsSelector] background load token mismatch after worker");
-						if (loaded === 0) {
-							this.finishBackgroundLoad();
-						}
+						// Cake Zone: always clear it - an abandoned load left the overlay up for ever.
+						this.finishBackgroundLoad();
 						return;
 					}
 					const newLoaded = loaded + count;
@@ -1556,9 +1599,8 @@ export default {
 					callback: async (r) => {
 						if (this.items_request_token !== requestToken) {
 							console.log("[ItemsSelector] background load token mismatch in callback");
-							if (loaded === 0) {
-								this.finishBackgroundLoad();
-							}
+							// Cake Zone: always clear it - an abandoned load left the overlay up for ever.
+							this.finishBackgroundLoad();
 							return;
 						}
 						const rows = r.message || [];
