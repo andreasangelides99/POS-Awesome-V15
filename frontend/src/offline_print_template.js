@@ -138,6 +138,9 @@ export default async function renderOfflineInvoiceHTML(invoice) {
                         invoice.company_address_display || getBranchAddress() || "",
                 terms: invoice.terms || terms,
                 terms_and_conditions: invoice.terms_and_conditions || terms,
+                // Cake Zone: the slip's Cashier line is the login. An offline invoice
+                // has no owner until the server saves it, so take the session user.
+                owner: invoice.owner || (typeof frappe !== "undefined" && frappe.session ? frappe.session.user : ""),
         };
         attachFormatter(doc);
         (doc.items || []).forEach(attachFormatter);
