@@ -1407,6 +1407,15 @@ export default {
 					if (!item.warehouse) {
 						item.warehouse = vm.pos_profile.warehouse;
 					}
+					// Cake Zone: the server's is_stock_item wins over the cached row's.
+					if (data.is_stock_item === 0 || data.is_stock_item === 1) {
+						item.is_stock_item = data.is_stock_item;
+						if (data.is_stock_item === 0) {
+							item.available_qty = undefined;
+							item.max_qty = undefined;
+							item.disable_increment = false;
+						}
+					}
 					// Ensure price list currency is synced from server response
 					if (data.price_list_currency) {
 						vm.price_list_currency = data.price_list_currency;
@@ -1845,6 +1854,13 @@ export default {
 		const cached = this.available_stock_cache[key];
 		const now = Date.now();
 		if (cached && now - cached.ts < 60000) {
+			if (cached.is_stock_item === 0) {
+				item.is_stock_item = 0;
+				item.available_qty = undefined;
+				item.max_qty = undefined;
+				item.disable_increment = false;
+				return;
+			}
 			item.available_qty = cached.qty;
 			this.update_qty_limits(item);
 			return;
@@ -1862,7 +1878,19 @@ export default {
 					]),
 				},
 			});
-			const qty = r.message && r.message.length ? flt(r.message[0].available_qty) : 0;
+			const row = r.message && r.message.length ? r.message[0] : null;
+			const qty = row ? flt(row.available_qty) : 0;
+			// Cake Zone: the server says what the item IS. A line whose cached row
+			// lacked is_stock_item (an event cake) becomes non-stock here, before any
+			// limit is set: no negative-stock warning, and the Rate box opens.
+			if (row && row.is_stock_item === 0) {
+				this.available_stock_cache[key] = { qty: 0, ts: now, is_stock_item: 0 };
+				item.is_stock_item = 0;
+				item.available_qty = undefined;
+				item.max_qty = undefined;
+				item.disable_increment = false;
+				return;
+			}
 			this.available_stock_cache[key] = { qty, ts: now };
 			item.available_qty = qty;
 			this.update_qty_limits(item);

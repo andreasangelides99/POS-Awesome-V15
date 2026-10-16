@@ -1,4 +1,7 @@
-const CACHE_NAME = "posawesome-cache-v1";
+// Cake Zone: v2 clears every till's cached copy of the old item worker, which
+// dropped is_stock_item (event cakes read as stock). Bump it whenever a file in
+// the install list below changes under the SAME url.
+const CACHE_NAME = "posawesome-cache-v2";
 const MAX_CACHE_ITEMS = 1000;
 
 async function enforceCacheLimit(cache) {
@@ -22,7 +25,7 @@ self.addEventListener("install", (event) => {
 
                                 "/assets/posawesome/dist/js/offline/index.js",
 
-                                "/assets/posawesome/dist/js/posapp/workers/itemWorker.js",
+                                "/assets/posawesome/dist/js/posapp/workers/itemWorker-v2.js",
                                 "/assets/posawesome/dist/js/libs/dexie.min.js",
 
 				"/manifest.json",
@@ -31,7 +34,7 @@ self.addEventListener("install", (event) => {
 			await Promise.all(
 				resources.map(async (url) => {
 					try {
-						const resp = await fetch(url);
+						const resp = await fetch(url, { cache: "reload" });
 						if (resp && resp.ok) {
 							await cache.put(url, resp.clone());
 						}

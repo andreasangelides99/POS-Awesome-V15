@@ -127,6 +127,7 @@ export function saveItemDetailsCache(profileName, priceList, items) {
                                 actual_qty: it.actual_qty,
                                 has_batch_no: it.has_batch_no,
                                 has_serial_no: it.has_serial_no,
+                                is_stock_item: it.is_stock_item, // Cake Zone: event cakes are non-stock
                                 item_uoms: it.item_uoms,
                                 batch_no_data: it.batch_no_data,
                                 serial_no_data: it.serial_no_data,

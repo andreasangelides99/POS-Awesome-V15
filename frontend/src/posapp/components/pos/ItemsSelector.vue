@@ -428,6 +428,7 @@ import {
 	getLocalStock,
 	isOffline,
 	getStoredItemsCount,
+	countStoredItemsMissingStockFlag,
 	initializeStockCache,
 	searchStoredItems,
 	saveItemsBulk,
@@ -877,7 +878,7 @@ export default {
 					!this.itemWorker
 				) {
 					try {
-						const workerUrl = "/assets/posawesome/dist/js/posapp/workers/itemWorker.js";
+						const workerUrl = "/assets/posawesome/dist/js/posapp/workers/itemWorker-v2.js";
 						this.itemWorker = new Worker(workerUrl, { type: "classic" });
 						this.itemWorker.onerror = function (event) {
 							console.error("Worker error:", event);
@@ -1177,6 +1178,18 @@ export default {
 			if (isOffline()) {
 				console.log("[ItemsSelector] offline, skipping server item count check");
 				return;
+			}
+			// Cake Zone: a cache written before the server sent is_stock_item is
+			// re-downloaded whole, once. Delta sync never repairs it: it only runs when
+			// the server has MORE items than the cache, and these items never change.
+			if (!this._stockFlagHealDone) {
+				this._stockFlagHealDone = true;
+				const stale = await countStoredItemsMissingStockFlag();
+				if (stale > 0) {
+					console.log("[ItemsSelector] cached items missing is_stock_item, reloading", { stale });
+					await this.forceReloadItems();
+					return;
+				}
 			}
 			try {
 				const localCount = await getStoredItemsCount();
@@ -2910,7 +2923,7 @@ export default {
 				// Use the plain URL so the service worker can match the cached file
 				// even when offline. Using a query string causes cache lookups to fail
 				// which results in "Failed to fetch a worker script" errors.
-				const workerUrl = "/assets/posawesome/dist/js/posapp/workers/itemWorker.js";
+				const workerUrl = "/assets/posawesome/dist/js/posapp/workers/itemWorker-v2.js";
 				this.itemWorker = new Worker(workerUrl, { type: "classic" });
 
 				this.itemWorker.onerror = function (event) {
@@ -2931,7 +2944,7 @@ export default {
 				// Use the plain URL so the service worker can match the cached file
 				// even when offline. Using a query string causes cache lookups to fail
 				// which results in "Failed to fetch a worker script" errors.
-				const workerUrl = "/assets/posawesome/dist/js/posapp/workers/itemWorker.js";
+				const workerUrl = "/assets/posawesome/dist/js/posapp/workers/itemWorker-v2.js";
 				this.itemWorker = new Worker(workerUrl, { type: "classic" });
 
 				this.itemWorker.onerror = function (event) {

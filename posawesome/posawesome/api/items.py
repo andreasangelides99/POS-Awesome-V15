@@ -10,7 +10,7 @@ from erpnext.stock.doctype.batch.batch import (
 )
 from erpnext.stock.get_item_details import get_item_details
 from frappe import _
-from frappe.utils import cstr, flt, get_datetime, nowdate
+from frappe.utils import cint, cstr, flt, get_datetime, nowdate
 from frappe.utils.background_jobs import enqueue
 from frappe.utils.caching import redis_cache
 
@@ -58,6 +58,15 @@ def get_available_qty(items):
 	if isinstance(items, str):
 		items = json.loads(items)
 
+	# Cake Zone: the reply says whether each item is a stock item, read from the
+	# database. The till's cached item rows can lack the flag (an event cake cached
+	# before it was sent), and a missing flag made a non-stock line look like stock:
+	# a negative-stock warning and no Rate box. The till takes the flag from here.
+	codes = list({it.get("item_code") for it in items or [] if it.get("item_code")})
+	stock_flags = dict(
+		frappe.get_all("Item", filters={"name": ["in", codes]}, fields=["name", "is_stock_item"], as_list=True)
+	) if codes else {}
+
 	result = []
 	for it in items or []:
 		item_code = it.get("item_code")
@@ -65,6 +74,13 @@ def get_available_qty(items):
 		batch_no = it.get("batch_no")
 
 		if not item_code or not warehouse:
+			continue
+
+		is_stock_item = cint(stock_flags.get(item_code, 1))
+		if not is_stock_item:
+			result.append(
+				{"item_code": item_code, "warehouse": warehouse, "available_qty": 0, "is_stock_item": 0}
+			)
 			continue
 
 		if batch_no:
@@ -77,6 +93,7 @@ def get_available_qty(items):
 				"item_code": item_code,
 				"warehouse": warehouse,
 				"available_qty": flt(available_qty),
+				"is_stock_item": 1,
 			}
 		)
 
@@ -897,7 +914,10 @@ def get_item_detail(item, doc=None, warehouse=None, price_list=None, company=Non
 		doc,
 		overwrite_warehouse=False,
 	)
-	if item.get("is_stock_item") and warehouse:
+	# Cake Zone: from the database, never from the client's (possibly cached) row.
+	is_stock_item = cint(frappe.get_value("Item", item_code, "is_stock_item"))
+	res["is_stock_item"] = is_stock_item
+	if is_stock_item and warehouse:
 		res["actual_qty"] = get_stock_availability(item_code, warehouse)
 	res["max_discount"] = max_discount
 	res["batch_no_data"] = batch_no_data

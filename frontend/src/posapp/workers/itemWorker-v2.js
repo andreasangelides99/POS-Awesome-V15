@@ -158,6 +158,9 @@ self.onmessage = async (event) => {
 				actual_qty: it.actual_qty,
 				has_batch_no: it.has_batch_no,
                                 has_serial_no: it.has_serial_no,
+                                // Cake Zone: without it every cached row read as a stock item,
+                                // so an event cake got a stock warning and no Rate box.
+                                is_stock_item: it.is_stock_item,
                                 has_variants: !!it.has_variants,
                                 barcodes: Array.isArray(it.item_barcode)
                                         ? it.item_barcode.map((b) => b.barcode).filter(Boolean)

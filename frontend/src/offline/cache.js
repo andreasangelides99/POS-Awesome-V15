@@ -153,6 +153,22 @@ export async function getStoredItemsCount() {
         }
 }
 
+// Cake Zone: rows cached before the server sent is_stock_item lack it, and a
+// non-stock item without the flag is treated as stock by the till.
+export async function countStoredItemsMissingStockFlag() {
+        try {
+                await checkDbHealth();
+                if (!db.isOpen()) await db.open();
+                return await db
+                        .table("items")
+                        .filter((it) => it.is_stock_item === undefined || it.is_stock_item === null)
+                        .count();
+        } catch (e) {
+                console.error("Failed to check stored items", e);
+                return 0;
+        }
+}
+
 export async function saveItems(items) {
 	try {
 		await checkDbHealth();
