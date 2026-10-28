@@ -700,23 +700,13 @@
 		<!-- Action Buttons -->
 		<v-card flat class="cards mb-0 mt-3 pa-0">
 			<v-row align="start" no-gutters>
-				<v-col cols="6">
+				<!-- Cake Zone (the owner, 28 Oct 2026): every sale prints. Upstream also offers a
+				     plain "Submit" that rings the sale up with no slip; at a branch that lets a
+				     customer leave without seeing what was rung, so it is gone. The focus, the
+				     highlight and Ctrl+X all go to Submit & Print instead. -->
+				<v-col cols="12">
 					<v-btn
 						ref="submitButton"
-						block
-						size="large"
-						color="primary"
-						theme="dark"
-						@click="submit"
-						:loading="loading"
-						:disabled="loading || vaildatPayment"
-						:class="{ 'submit-highlight': highlightSubmit }"
-					>
-						{{ __("Submit") }}
-					</v-btn>
-				</v-col>
-				<v-col cols="6" class="pl-1">
-					<v-btn
 						block
 						size="large"
 						color="success"
@@ -724,6 +714,7 @@
 						@click="submit(undefined, false, true)"
 						:loading="loading"
 						:disabled="loading || vaildatPayment"
+						:class="{ 'submit-highlight': highlightSubmit }"
 					>
 						{{ __("Submit & Print") }}
 					</v-btn>
@@ -1668,7 +1659,8 @@ export default {
 				e.preventDefault();
 				e.stopPropagation();
 				if (this.invoice_doc && this.invoice_doc.payments) {
-					this.submit_invoice();
+					// Cake Zone: the shortcut prints too - there is no unprinted sale.
+					this.submit(undefined, false, true);
 				}
 			}
 		},
