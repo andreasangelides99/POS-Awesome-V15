@@ -21,6 +21,10 @@
 
 				<v-card-text class="pa-0 white-background">
 					<v-container class="pa-6">
+						<!-- Cake Zone, 28 Oct 2026: opened by itself for a shift left open from an earlier day. -->
+						<v-alert v-if="staleSince" type="error" variant="tonal" class="mb-4">
+							{{ __("This shift is from {0} and was never closed. Count the drawer and close it now. It will be that day's close, and you can open today's shift straight after.", [staleSince]) }}
+						</v-alert>
 						<v-row v-if="configuredFloat">
 							<v-col cols="12" class="pa-1">
 								<div class="table-header mb-4">
@@ -165,6 +169,7 @@ export default {
 	mixins: [format],
 	data: () => ({
 		closingDialog: false,
+			staleSince: null,
 		itemsPerPage: 20,
 		dialog_data: {},
 		// South African denominations in circulation. 1c, 2c and 5c went in 2002.
@@ -283,6 +288,7 @@ export default {
 			this.denominations.forEach((d) => {
 				d.count = null;
 			});
+			this.staleSince = window.cz_stale_shift || null;
 			this.closingDialog = true;
 			this.dialog_data = data;
 		});

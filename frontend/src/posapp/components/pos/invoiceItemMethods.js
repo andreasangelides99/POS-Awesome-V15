@@ -945,6 +945,16 @@ export default {
 
 	// Show payment dialog after validation and processing
 	async show_payment() {
+		// Cake Zone, 28 Oct 2026: no sale on a shift left open from an earlier day - refused
+		// here, before Pay saves a draft, and again in Pay.vue's submit. See usePosShift.js.
+		if (window.cz_stale_shift) {
+			this.eventBus.emit("show_message", {
+				title: `This till is still on the shift from ${window.cz_stale_shift}. Close that shift first, then open today's.`,
+				color: "error",
+			});
+			this.eventBus.emit("open_closing_dialog");
+			return;
+		}
 		try {
 			console.log("Starting show_payment process");
 			console.log("Invoice state before payment:", {

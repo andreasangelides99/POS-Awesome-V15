@@ -850,6 +850,16 @@ export default {
 		},
 		submit() {
 			if (this.isSubmitting) return;
+			// Cake Zone, 28 Oct 2026: no sale on a shift left open from an earlier day.
+			// See usePosShift.js - close it first, then today's shift opens.
+			if (window.cz_stale_shift) {
+				this.eventBus.emit("show_message", {
+					title: `This till is still on the shift from ${window.cz_stale_shift}. Close that shift first, then open today's.`,
+					color: "error",
+				});
+				this.eventBus.emit("open_closing_dialog");
+				return;
+			}
 			this.isSubmitting = true;
 			const customer = this.customer_name;
 			const vm = this;

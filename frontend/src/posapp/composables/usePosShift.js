@@ -56,12 +56,26 @@ export function usePosShift(openDialog) {
                         console.warn("Realtime emit failed", e);
                     }
                     console.info("LoadPosProfile");
+                    // Cake Zone, 28 Oct 2026: POS Awesome resumes an open shift whatever day it
+                    // opened, so yesterday's forgotten shift would quietly take today's sales and
+                    // one count would have to cover two days. The server marks such a shift
+                    // (cz_stale_since); refuse to sell on it (Pay.vue) and open the count now.
+                    // The late close is dated to its own day, so today's shift opens straight after.
+                    window.cz_stale_shift = r.message.cz_stale_since || null;
+                    if (window.cz_stale_shift) {
+                        eventBus?.emit("show_message", {
+                            title: `This till's shift from ${window.cz_stale_shift} was never closed. Count the drawer and close it now, then open today's shift.`,
+                            color: "error",
+                        });
+                        setTimeout(() => get_closing_data(), 1500);
+                    }
                     try {
                         setOpeningStorage(r.message);
                     } catch (e) {
                         console.error("Failed to cache opening data", e);
                     }
                 } else {
+                    window.cz_stale_shift = null;
                     const data = getOpeningStorage();
                     if (data) {
                         pos_profile.value = data.pos_profile;
