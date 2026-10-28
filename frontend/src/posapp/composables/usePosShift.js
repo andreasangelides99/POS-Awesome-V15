@@ -62,12 +62,33 @@ export function usePosShift(openDialog) {
                     // (cz_stale_since); refuse to sell on it (Pay.vue) and open the count now.
                     // The late close is dated to its own day, so today's shift opens straight after.
                     window.cz_stale_shift = r.message.cz_stale_since || null;
-                    if (window.cz_stale_shift) {
+                    window.cz_shift_block = null;
+                    // Cake Zone, 28 Oct 2026: the same resume ignores WHICH till too. An area
+                    // manager with a shift open at one branch, signing in on a PC set up as a
+                    // till at another, would sell against the first branch's stock. Refuse:
+                    // the shift must be counted and closed at its own drawer.
+                    let here = null;
+                    try {
+                        here = (JSON.parse(localStorage.getItem("cz_till_device") || "null") || {}).pos_profile || null;
+                    } catch (e) {
+                        here = null;
+                    }
+                    const shiftTill = r.message.pos_profile && r.message.pos_profile.name;
+                    if (here && shiftTill && here !== shiftTill) {
+                        window.cz_shift_block = `You still have a shift open on ${shiftTill}, and this PC is ${here}. Go to ${shiftTill}, count the drawer and close the shift there, then sign in here.`;
+                        window.cz_shift_block_close = false;
+                    } else if (window.cz_stale_shift) {
+                        window.cz_shift_block = `This till is still on the shift from ${window.cz_stale_shift}. Close that shift first, then open today's.`;
+                        window.cz_shift_block_close = true;
+                    }
+                    if (window.cz_shift_block) {
                         eventBus?.emit("show_message", {
-                            title: `This till's shift from ${window.cz_stale_shift} was never closed. Count the drawer and close it now, then open today's shift.`,
+                            title: window.cz_shift_block_close
+                                ? `This till's shift from ${window.cz_stale_shift} was never closed. Count the drawer and close it now, then open today's shift.`
+                                : window.cz_shift_block,
                             color: "error",
                         });
-                        setTimeout(() => get_closing_data(), 1500);
+                        if (window.cz_shift_block_close) setTimeout(() => get_closing_data(), 1500);
                     }
                     try {
                         setOpeningStorage(r.message);
@@ -76,6 +97,7 @@ export function usePosShift(openDialog) {
                     }
                 } else {
                     window.cz_stale_shift = null;
+                    window.cz_shift_block = null;
                     const data = getOpeningStorage();
                     if (data) {
                         pos_profile.value = data.pos_profile;

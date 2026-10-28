@@ -1762,6 +1762,9 @@ export default {
 			}
 			frappe.call({
 				method: "posawesome.posawesome.api.utilities.get_sales_person_names",
+				// Cake Zone, 28 Oct 2026: name THIS till, so a login on many branches (an area
+				// manager) is offered this branch's people, not every branch's.
+				args: { pos_profile: vm.pos_profile && vm.pos_profile.name },
 				callback: function (r) {
 					if (r.message && r.message.length > 0) {
 						vm.sales_persons = r.message.map((sp) => ({
