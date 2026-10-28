@@ -158,6 +158,9 @@ export default async function renderOfflineInvoiceHTML(invoice) {
                         terms: doc.terms,
                         terms_and_conditions: doc.terms_and_conditions,
                         _: frappe?._ ? frappe._ : (t) => t,
+                        // Cake Zone: the TRAINING watermark (cakezone_erp/training.py), from boot
+                        // because an offline till cannot ask the server.
+                        cz_training: () => (typeof frappe !== "undefined" && frappe.boot && frappe.boot.cakezone_training ? 1 : 0),
                         frappe: {
                                 db: { get_value: () => "", sql: () => [] },
                                 get_list: () => [],
