@@ -592,7 +592,9 @@
 							class="my-0 pa-1"
 						></v-switch>
 					</v-col>
-					<v-col cols="6" v-if="invoice_doc.is_return">
+					<!-- Cake Zone: no "Credit Return?" (owner, 1 Nov 2026). A walk-in shop refunds
+					     the money; a refund kept as customer credit has nobody to hold it. -->
+					<v-col cols="6" v-if="false && invoice_doc.is_return">
 						<v-switch
 							v-model="is_credit_return"
 							flat
