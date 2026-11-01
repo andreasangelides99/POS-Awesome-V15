@@ -13,8 +13,9 @@
 			<v-toolbar-title @click="$emit('go-desk')"
 				:class="['text-h6 font-weight-bold text-primary navbar-title', isRtl ? 'rtl-title' : 'ltr-title']"
 				style="cursor: pointer; text-decoration: none">
-				<span class="font-weight-light navbar-title-light">{{ __("POS") }}</span><span
-					class="navbar-title-bold">{{ __("Awesome") }}</span>
+				<!-- Cake Zone branding (owner, 1 Nov 2026) -->
+				<span class="font-weight-light navbar-title-light">{{ __("Cake Zone") }}&nbsp;</span><span
+					class="navbar-title-bold">{{ __("ERP") }}</span>
 			</v-toolbar-title>
 		</div>
 
