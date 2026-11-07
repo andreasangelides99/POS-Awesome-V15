@@ -79,7 +79,7 @@
 						class="payments pa-1"
 						v-for="payment in invoice_doc.payments"
 						:key="payment.name"
-						v-show="!invoice_doc.is_return || payment.mode_of_payment === 'Cash'"
+						v-show="!invoice_doc.is_return || payment.mode_of_payment === (delivery_return_mode || 'Cash')"
 					>
 						<v-col cols="6" v-if="!is_mpesa_c2b_payment(payment)">
 							<v-text-field
@@ -168,6 +168,41 @@
 										:items="bank_list"
 										v-model="payment.custom_paying_bank"
 									></v-select>
+								</v-col>
+							</v-row>
+						</v-col>
+
+						<!-- Cake Zone: a delivery order. The order number is the only link from the
+						     app's statement back to this sale, so the server refuses the sale without it.
+						     A refund carries the original's, so it cannot be changed. -->
+						<v-col cols="12" v-if="is_delivery_payment(payment)" class="pt-0">
+							<v-row dense>
+								<v-col cols="12" sm="6">
+									<v-select
+										density="compact"
+										variant="outlined"
+										color="primary"
+										:label="frappe._('App')"
+										:bg-color="isDarkTheme ? '#1E1E1E' : 'white'"
+										class="dark-field"
+										hide-details
+										:items="delivery_apps"
+										:disabled="!!invoice_doc.is_return"
+										v-model="payment.custom_delivery_app"
+									></v-select>
+								</v-col>
+								<v-col cols="12" sm="6">
+									<v-text-field
+										density="compact"
+										variant="outlined"
+										color="primary"
+										:label="frappe._('Order Number')"
+										:bg-color="isDarkTheme ? '#1E1E1E' : 'white'"
+										class="dark-field"
+										hide-details
+										:disabled="!!invoice_doc.is_return"
+										v-model="payment.reference_no"
+									></v-text-field>
 								</v-col>
 							</v-row>
 						</v-col>
@@ -856,6 +891,10 @@ export default {
 			customer_info: "", // Customer info
 			mpesa_modes: [], // List of available M-Pesa modes
 			eft_modes: [], // Cake Zone: modes that must capture EFT details
+			// Cake Zone: known before the server answers, so an offline till still asks.
+			delivery_modes: ["Delivery"],
+			delivery_apps: ["Uber Eats", "Mr D"],
+			delivery_return_mode: null, // set while a refund of a delivery order is on screen
 			bank_list: [], // Cake Zone: banks a customer can pay from
 			sales_persons: [], // List of sales persons
 			sales_person: "", // Selected sales person
@@ -1256,6 +1295,31 @@ export default {
 			// (cakezone_erp.api.tills.change_from_cash_only); this tells the cashier first.
 			if (!this.invoice_doc.is_return) {
 				const sale_total = this.invoice_doc.rounded_total || this.invoice_doc.grand_total;
+				// Cake Zone: a delivery order goes on Delivery in full, with its app and number.
+				// The server enforces this too, but an offline sale it refuses becomes a draft.
+				const delivery_paid = this.invoice_doc.payments.filter(
+					(payment) => this.is_delivery_payment(payment),
+				);
+				if (delivery_paid.length) {
+					const problem = delivery_paid.some(
+						(payment) =>
+							!payment.custom_delivery_app ||
+							!String(payment.reference_no || "").replace(/[#\s]/g, ""),
+					)
+						? __("Choose the app and type the order number from its tablet.")
+						: this.flt(this.total_payments) !== this.flt(sale_total) ||
+							  this.invoice_doc.payments.some(
+									(payment) =>
+										Number(payment.amount) !== 0 && !this.is_delivery_payment(payment),
+							  )
+							? __("A delivery order goes on Delivery in full.")
+							: null;
+					if (problem) {
+						this.eventBus.emit("show_message", { title: problem, color: "error" });
+						frappe.utils.play_sound("error");
+						return;
+					}
+				}
 				let non_cash = 0;
 				this.invoice_doc.payments.forEach((payment) => {
 					if (!payment.mode_of_payment.toLowerCase().includes("cash")) {
@@ -1897,6 +1961,56 @@ export default {
 				payment.custom_payment_date = frappe.datetime.get_today();
 			}
 		},
+		// Cake Zone: Delivery is a flag on the mode, and which tills offer it is which profiles
+		// carry the mode, so a profile without it never reaches this panel.
+		get_delivery_setup() {
+			const vm = this;
+			frappe.call({
+				method: "cakezone_erp.api.delivery.get_till_setup",
+				async: true,
+				callback: function (r) {
+					if (!r.exc && r.message) {
+						vm.delivery_modes = r.message.modes || [];
+						vm.delivery_apps = r.message.apps || [];
+					}
+				},
+			});
+		},
+		is_delivery_payment(payment) {
+			return this.delivery_modes.includes(payment.mode_of_payment) && Number(payment.amount) != 0;
+		},
+		// Cake Zone: no money comes back over the counter on a delivery order, so its refund goes
+		// back on Delivery. Asks the server, which holds what the original was paid on.
+		apply_delivery_return(invoice_doc) {
+			this.delivery_return_mode = null;
+			if (!invoice_doc.is_return || !invoice_doc.return_against) {
+				return;
+			}
+			const vm = this;
+			frappe.call({
+				method: "cakezone_erp.api.delivery.original_delivery",
+				args: { invoice: invoice_doc.return_against },
+				callback: function (r) {
+					const original = !r.exc && r.message;
+					const row =
+						original &&
+						invoice_doc.payments.find((p) => p.mode_of_payment === original.mode_of_payment);
+					if (!row || vm.invoice_doc !== invoice_doc) {
+						return;
+					}
+					const amount = -Math.abs(invoice_doc.rounded_total || invoice_doc.grand_total);
+					invoice_doc.payments.forEach((p) => {
+						p.amount = 0;
+						p.base_amount = 0;
+					});
+					row.amount = amount;
+					row.base_amount = amount;
+					row.custom_delivery_app = original.custom_delivery_app;
+					row.reference_no = original.reference_no;
+					vm.delivery_return_mode = original.mode_of_payment;
+				},
+			});
+		},
 		// Get M-Pesa payment modes from backend
 		get_mpesa_modes() {
 			const vm = this;
@@ -2125,6 +2239,7 @@ export default {
 					);
 					this.is_credit_return = false;
 				}
+				this.apply_delivery_return(invoice_doc);
 				this.loyalty_amount = 0;
 				this.redeemed_customer_credit = 0;
 				// Only get addresses if customer exists
@@ -2138,6 +2253,7 @@ export default {
 				this.stock_settings = data.stock_settings || {};
 				this.get_mpesa_modes();
 				this.get_eft_setup();
+				this.get_delivery_setup();
 			});
 			this.eventBus.on("add_the_new_address", (data) => {
 				this.addresses.push(data);

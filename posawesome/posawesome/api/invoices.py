@@ -35,6 +35,7 @@ PAYMENT_DETAIL_FIELDS = (
     "custom_payment_date",
     "custom_payer_name",
     "custom_paying_bank",
+    "custom_delivery_app",
 )
 
 def _sanitize_item_name(name: str) -> str:
