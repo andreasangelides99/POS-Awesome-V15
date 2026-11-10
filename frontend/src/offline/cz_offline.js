@@ -139,9 +139,39 @@ export function actor() {
 // The page was loaded from the PC's copy, so frappe.session still names whoever loaded it
 // last. Point it at the person who signed in, so the till treats them as the user: their
 // roles decide refunds and reports, and their name goes on the shift and the sales.
+// While someone is signed in on the till's own screen there is NO ERP session behind the page
+// (the owner, 10 Nov 2026, on training): every lookup the till makes as an item is added was
+// still sent - offline each had to wait to fail, so an item took long to appear; and once the
+// internet was back each was REFUSED (403, "invalid method") because nobody is logged in.
+// So frappe.call gives up at once, the way a call with no network does, and the till carries on
+// with what it has saved. Sales, openings and closes do not use frappe.call: they go with the
+// seller's key (keyCall), so they still sync.
+function guardCalls() {
+	if (typeof frappe === "undefined" || frappe._czCallGuard) return;
+	const real = frappe.call;
+	frappe._czCallGuard = real;
+	frappe.call = function (opts, ...rest) {
+		if (!actor()) return real.call(this, opts, ...rest);
+		const xhr = { status: 0, readyState: 0, responseText: "", responseJSON: null };
+		if (opts && typeof opts === "object") {
+			setTimeout(() => {
+				try {
+					if (typeof opts.error === "function") opts.error(xhr);
+					if (typeof opts.always === "function") opts.always(null);
+				} catch (e) {
+					/* the caller's own handler */
+				}
+			}, 0);
+		}
+		if (typeof $ !== "undefined" && $.Deferred) return $.Deferred().reject(xhr).promise();
+		return Promise.reject(xhr);
+	};
+}
+
 export function applyActor() {
 	const a = actor();
 	if (!a || typeof frappe === "undefined") return;
+	guardCalls();
 	frappe.session.user = a.user;
 	frappe.session.user_fullname = a.full_name;
 	frappe.user_roles = a.roles || [];

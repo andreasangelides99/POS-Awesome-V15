@@ -10,6 +10,19 @@
 		<OpeningDialog v-if="dialog" :dialog="dialog"></OpeningDialog>
 		<OfflineSignIn v-if="czSignIn" @signed-in="czSignedIn"></OfflineSignIn>
 		<OfflineEnrol v-if="czEnrol" @done="czEnrolDone"></OfflineEnrol>
+		<v-dialog v-model="czBackOnline" max-width="480" persistent>
+			<v-card>
+				<v-card-title>{{ __("The internet is back") }}</v-card-title>
+				<v-card-text>
+					{{ __("Your offline sales are in ERP. Log in to carry on selling - your shift carries on.") }}
+				</v-card-text>
+				<v-card-actions>
+					<v-btn variant="text" @click="czBackOnline = false; czBackLater = true">{{ __("Not now") }}</v-btn>
+					<v-spacer></v-spacer>
+					<v-btn color="primary" variant="flat" @click="czLogInAgain">{{ __("Log in") }}</v-btn>
+				</v-card-actions>
+			</v-card>
+		</v-dialog>
 		<v-row v-show="!dialog" dense class="ma-0 dynamic-main-row">
 			<v-col v-show="!payment && !showOffers && !coupons" xl="5" lg="5" md="5" sm="5" cols="12"
 				class="pos dynamic-col">
@@ -92,6 +105,8 @@ export default {
 			czSignIn: false,
 			czEnrol: false,
 			czEnrolAsked: false,
+			czBackOnline: false,
+			czBackLater: false,
 
 			payment: false,
 			showOffers: false,
@@ -161,6 +176,12 @@ export default {
 		czEnrolDone() {
 			this.czEnrol = false;
 		},
+		czLogInAgain() {
+			// Nothing is left on the PC to send (the dialog only shows then). The shift stays
+			// open in ERP and carries on after the login.
+			clearActor();
+			window.location.replace("/login?redirect-to=" + encodeURIComponent("/app/posapp"));
+		},
 		checkLoadingComplete() {
 			if (this.itemsLoaded && this.customersLoaded) {
 				console.info("Loading completed");
@@ -180,6 +201,12 @@ export default {
 				else this.czSignIn = true;
 			});
 			this.eventBus.on("cz_offer_enrol", () => this.czOfferEnrol());
+			// Asked once; "Not now" waits until the next reload, and selling carries on offline
+			// meanwhile (those sales go with the seller's key, as before).
+			this.eventBus.on("cz_back_online", () => {
+				if (this.czBackLater || this.czBackOnline || !actor()) return;
+				this.czBackOnline = true;
+			});
 			this.eventBus.on("register_pos_data", (data) => {
 				this.pos_profile = data.pos_profile;
 				this.get_offers(this.pos_profile.name, this.pos_profile);

@@ -1,6 +1,7 @@
 /* global __, frappe, flt */
 import {
 	isOffline,
+	offlineTillOn,
 	saveCustomerBalance,
 	getCachedCustomerBalance,
 	getCachedPriceListItems,
@@ -67,6 +68,9 @@ export default {
 				} else {
 					// No cached balance available in offline mode
 					this.customer_balance = 0;
+					// Cake Zone sells to walk-in customers: a balance means nothing at the
+					// till, and this popped up on every item added offline (owner, 10 Nov 2026).
+					if (offlineTillOn()) return;
 					this.eventBus.emit("show_message", {
 						title: __("Customer balance unavailable offline"),
 						text: __("Balance will be updated when connection is restored"),

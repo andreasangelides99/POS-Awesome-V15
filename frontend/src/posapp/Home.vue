@@ -173,7 +173,11 @@ export default {
 		if (offlineTillOn()) {
 			this.czRetryTimer = setInterval(async () => {
 				if (!canReachServer()) return;
-				if (!getPendingOfflineInvoiceCount() && !pendingOpeningCount() && !pendingClosingCount()) return;
+				if (!getPendingOfflineInvoiceCount() && !pendingOpeningCount() && !pendingClosingCount()) {
+					// Signed in offline, internet back, nothing left to send: time to log in again.
+					if (actor()) this.eventBus.emit("cz_back_online");
+					return;
+				}
 				try {
 					const result = await syncOfflineInvoices();
 					if (result && (result.synced || result.drafted)) reportSyncOutcome(result, this.eventBus);

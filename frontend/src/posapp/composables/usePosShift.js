@@ -157,8 +157,26 @@ export function usePosShift(openDialog) {
                     openDialog && openDialog();
                 }
             })
-            .catch((err) => {
+            .catch(async (err) => {
                 if (offlineTillOn() && unreachable(err)) {
+                    // Still marked as signed in offline, yet a person may have logged in on the
+                    // login page since (the tab keeps the offline sign-in, and while it is set ERP
+                    // calls are not even tried). Ask ERP directly: a real login ends the offline one.
+                    if (!czRetried && actor() && navigator.onLine) {
+                        try {
+                            const res = await fetch("/api/method/frappe.auth.get_logged_user", {
+                                credentials: "same-origin",
+                                headers: { Accept: "application/json" },
+                            });
+                            const who = res.ok ? (await res.json()).message : null;
+                            if (who && who !== "Guest") {
+                                clearActor();
+                                return check_opening_entry(true);
+                            }
+                        } catch (e) {
+                            /* no server after all */
+                        }
+                    }
                     // No server: the till's own sign-in decides who sells (Pos.vue).
                     eventBus?.emit("cz_offline_start");
                     return;
