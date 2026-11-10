@@ -10,6 +10,7 @@ import themePlugin from "./plugins/theme.js";
 import * as components from "vuetify/components";
 import * as directives from "vuetify/directives";
 import Home from "./Home.vue";
+import { sellPastStock, canReachServer } from "../offline/index.js";
 
 // Expose Dexie globally for libraries that expect a global Dexie instance
 if (typeof window !== "undefined" && !window.Dexie) {
@@ -98,6 +99,10 @@ frappe.PosApp.posapp = class {
 		});
 		const app = createApp(Home);
 		app.component("VueDatePicker", VueDatePicker);
+		// Cake Zone offline till: templates and plain functions both need these.
+		window.czSellPastStock = sellPastStock;
+		window.czCanSync = canReachServer;
+		app.config.globalProperties.czSellPastStock = sellPastStock;
 		app.use(eventBus);
 		app.use(vuetify);
 		app.use(themePlugin, { vuetify });
@@ -113,6 +118,7 @@ frappe.PosApp.posapp = class {
 		if (
 			("serviceWorker" in navigator && window.location.protocol === "https:") ||
 			window.location.hostname === "localhost" ||
+			window.location.hostname.endsWith(".localhost") ||
 			window.location.hostname === "127.0.0.1"
 		) {
 			navigator.serviceWorker

@@ -1,7 +1,9 @@
 // Cake Zone: v2 clears every till's cached copy of the old item worker, which
 // dropped is_stock_item (event cakes read as stock). Bump it whenever a file in
 // the install list below changes under the SAME url.
-const CACHE_NAME = "posawesome-cache-v2";
+// v3 (10 Nov 2026, offline till): the till's page is now refreshed on every online visit (see
+// the navigate handler), so this bump also replaces every till's install-time copy once.
+const CACHE_NAME = "posawesome-cache-v3";
 const MAX_CACHE_ITEMS = 1000;
 
 async function enforceCacheLimit(cache) {
@@ -72,7 +74,22 @@ self.addEventListener("fetch", (event) => {
 		event.respondWith(
 			(async () => {
                                 try {
-                                        return await fetch(event.request);
+                                        const resp = await fetch(event.request);
+                                        // Keep the till's page current. Until 10 Nov 2026 the copy used
+                                        // offline was the one fetched when this worker INSTALLED, so it
+                                        // carried that day's program versions and settings for ever: a
+                                        // till reloaded offline weeks later could ask for files it no
+                                        // longer had. A redirect (to /login) is never stored.
+                                        try {
+                                                const path = new URL(event.request.url).pathname;
+                                                if (resp && resp.ok && !resp.redirected && path.startsWith("/app/posapp")) {
+                                                        const cache = await caches.open(CACHE_NAME);
+                                                        await cache.put("/app/posapp", resp.clone());
+                                                }
+                                        } catch (e) {
+                                                console.warn("SW could not refresh the till page", e);
+                                        }
+                                        return resp;
                                 } catch (err) {
                                         const cached = await caches.match(event.request, { ignoreSearch: true });
                                         if (cached) {

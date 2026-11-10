@@ -66,6 +66,11 @@ import {
 	isOffline,
 	getLastSyncTotals,
 	reportSyncOutcome,
+	offlineTillOn,
+	canReachServer,
+	actor,
+	clearActor,
+	pendingOpeningCount,
 } from "../offline/index.js";
 import { silentPrint } from "./plugins/print.js";
 import {
@@ -383,10 +388,16 @@ export default {
 					color: "warning",
 				});
 			}
-			if (isOffline()) {
+			if (offlineTillOn() ? !canReachServer() : isOffline()) {
 				return;
 			}
 			const result = await syncOfflineInvoices();
+			if (offlineTillOn() && actor() && result && !result.pending && !pendingOpeningCount()) {
+				this.eventBus.emit("show_message", {
+					title: __("The internet is back and this till's offline sales are in ERP. Sign out and sign in again when you have a moment."),
+					color: "info",
+				});
+			}
 			reportSyncOutcome(result, this.eventBus);
 			this.pendingInvoices = getPendingOfflineInvoiceCount();
 			this.syncTotals = result || this.syncTotals;
@@ -420,6 +431,14 @@ export default {
 			// have not synced yet, and wiping them on the way out would throw away sales
 			// taken during a signal outage - the one thing offline capture exists to
 			// protect. They survive the logout and sync on the next sign-in.
+			if (offlineTillOn() && actor()) {
+				// Signed in on the till's own screen: there is no server session to end.
+				clearActor();
+				if (!canReachServer()) {
+					window.location.reload();
+					return;
+				}
+			}
 			const leave = () => window.location.replace("/login");
 			let r;
 			try {

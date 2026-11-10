@@ -1776,8 +1776,8 @@ export default {
 		}
 		if (item.max_qty !== undefined && flt(item.qty) > flt(item.max_qty)) {
 			const blockSale =
-				!this.stock_settings.allow_negative_stock ||
-				this.pos_profile.posa_block_sale_beyond_available_qty;
+				(!this.stock_settings.allow_negative_stock ||
+				this.pos_profile.posa_block_sale_beyond_available_qty) && !(window.czSellPastStock && window.czSellPastStock());
 			if (blockSale) {
 				item.qty = item.max_qty;
 				calcStockQty(item, item.qty, this);
@@ -1814,8 +1814,8 @@ export default {
 
 			if (item.max_qty !== undefined && flt(item.qty) > flt(item.max_qty)) {
 				const blockSale =
-					!this.stock_settings.allow_negative_stock ||
-					this.pos_profile.posa_block_sale_beyond_available_qty;
+					(!this.stock_settings.allow_negative_stock ||
+					this.pos_profile.posa_block_sale_beyond_available_qty) && !(window.czSellPastStock && window.czSellPastStock());
 				if (blockSale) {
 					item.qty = item.max_qty;
 					calcStockQty(item, item.qty, this);
@@ -1835,8 +1835,8 @@ export default {
 			}
 
 			item.disable_increment =
-				(!this.stock_settings.allow_negative_stock ||
-					this.pos_profile.posa_block_sale_beyond_available_qty) &&
+				((!this.stock_settings.allow_negative_stock ||
+					this.pos_profile.posa_block_sale_beyond_available_qty) && !(window.czSellPastStock && window.czSellPastStock())) &&
 				item.qty >= item.max_qty;
 		}
 	},

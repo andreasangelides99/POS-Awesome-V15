@@ -6,6 +6,12 @@ import {
     setOpeningStorage,
     clearOpeningStorage,
     setTaxTemplate,
+    offlineTillOn,
+    rememberProfile,
+    clearActor,
+    actor,
+    pendingOpeningCount,
+    syncOfflineOpenings,
 } from "../../offline/index.js";
 import { silentPrint } from "../plugins/print.js";
 import { maySeeZReport } from "../utils/shiftReports.js";
@@ -20,7 +26,12 @@ export function usePosShift(openDialog) {
     const pos_profile = ref(null);
     const pos_opening_shift = ref(null);
 
-    async function check_opening_entry() {
+    // Cake Zone offline till: a call that never reached the server, as opposed to a refusal.
+    function unreachable(err) {
+        return !navigator.onLine || window.serverOnline === false || !err || err.status === 0;
+    }
+
+    async function check_opening_entry(czRetried = false) {
         await initPromise;
         await checkDbHealth();
         return frappe
@@ -28,6 +39,13 @@ export function usePosShift(openDialog) {
                 user: frappe.session.user,
             })
             .then((r) => {
+                if (r.message && offlineTillOn()) {
+                    // A real session answered: nobody is signed in offline any more, and
+                    // this till's profile is kept for the next outage.
+                    clearActor();
+                    rememberProfile(r.message);
+                    eventBus?.emit("cz_offer_enrol");
+                }
                 if (r.message) {
                     pos_profile.value = r.message.pos_profile;
                     pos_opening_shift.value = r.message.pos_opening_shift;
@@ -96,6 +114,11 @@ export function usePosShift(openDialog) {
                         console.error("Failed to cache opening data", e);
                     }
                 } else {
+                    if (offlineTillOn() && !czRetried && pendingOpeningCount()) {
+                        // A shift opened offline has not reached the server yet. Send it
+                        // first, or this would offer to open a second shift.
+                        return syncOfflineOpenings().then(() => check_opening_entry(true));
+                    }
                     window.cz_stale_shift = null;
                     window.cz_shift_block = null;
                     const data = getOpeningStorage();
@@ -115,7 +138,12 @@ export function usePosShift(openDialog) {
                     openDialog && openDialog();
                 }
             })
-            .catch(() => {
+            .catch((err) => {
+                if (offlineTillOn() && unreachable(err)) {
+                    // No server: the till's own sign-in decides who sells (Pos.vue).
+                    eventBus?.emit("cz_offline_start");
+                    return;
+                }
                 const data = getOpeningStorage();
                 if (data) {
                     pos_profile.value = data.pos_profile;
@@ -135,6 +163,17 @@ export function usePosShift(openDialog) {
     }
 
     function get_closing_data() {
+        if (offlineTillOn() && actor()) {
+            // Step 1 of the offline till does not close offline: the count waits for the
+            // server. Signed in offline there is no server session to close with either.
+            eventBus?.emit("show_message", {
+                title: navigator.onLine && window.serverOnline !== false
+                    ? __("The internet is back. Sign out and sign in again, then close the shift.")
+                    : __("The shift is closed once the internet is back. Keep selling for now."),
+                color: "warning",
+            });
+            return Promise.resolve();
+        }
         return frappe
             .call(
                 "posawesome.posawesome.doctype.pos_closing_shift.pos_closing_shift.make_closing_shift_from_opening",

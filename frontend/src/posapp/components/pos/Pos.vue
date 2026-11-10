@@ -8,6 +8,8 @@
 		<MpesaPayments></MpesaPayments>
 		<Variants></Variants>
 		<OpeningDialog v-if="dialog" :dialog="dialog"></OpeningDialog>
+		<OfflineSignIn v-if="czSignIn" @signed-in="czSignedIn"></OfflineSignIn>
+		<OfflineEnrol v-if="czEnrol" @done="czEnrolDone"></OfflineEnrol>
 		<v-row v-show="!dialog" dense class="ma-0 dynamic-main-row">
 			<v-col v-show="!payment && !showOffers && !coupons" xl="5" lg="5" md="5" sm="5" cols="12"
 				class="pos dynamic-col">
@@ -44,6 +46,17 @@ import NewAddress from "./NewAddress.vue";
 import Variants from "./Variants.vue";
 import Returns from "./Returns.vue";
 import MpesaPayments from "./Mpesa-Payments.vue";
+import OfflineSignIn from "./OfflineSignIn.vue";
+import OfflineEnrol from "./OfflineEnrol.vue";
+import {
+	offlineTillOn,
+	boundTill,
+	isEnrolled,
+	actor,
+	applyActor,
+	clearActor,
+	afterSignIn,
+} from "../../../offline/index.js";
 import {
 	getOpeningStorage,
 	setOpeningStorage,
@@ -76,6 +89,9 @@ export default {
 	data: function () {
 		return {
 			dialog: false,
+			czSignIn: false,
+			czEnrol: false,
+			czEnrolAsked: false,
 
 			payment: false,
 			showOffers: false,
@@ -100,6 +116,8 @@ export default {
 		Variants,
 		MpesaPayments,
 		SalesOrders,
+		OfflineSignIn,
+		OfflineEnrol,
 	},
 
 	methods: {
@@ -110,6 +128,38 @@ export default {
 			frappe.db.get_doc("POS Settings", undefined).then((doc) => {
 				this.eventBus.emit("set_pos_settings", doc);
 			});
+		},
+		// Cake Zone offline till (10 Nov 2026) --------------------------------------
+		czSignedIn() {
+			this.czSignIn = false;
+			applyActor();
+			const next = afterSignIn();
+			if (next.resume) {
+				const data = next.resume;
+				this.pos_profile = data.pos_profile;
+				this.pos_opening_shift = data.pos_opening_shift;
+				this.eventBus.emit("register_pos_profile", data);
+				this.eventBus.emit("set_company", data.company);
+				this.eventBus.emit("show_message", {
+					title: __("Signed in offline. Sales are kept on this till until the internet is back."),
+					color: "warning",
+				});
+			} else if (next.blocked) {
+				clearActor();
+				this.eventBus.emit("show_message", { title: next.blocked, color: "error" });
+				this.czSignIn = true;
+			} else {
+				this.dialog = true;
+			}
+		},
+		czOfferEnrol() {
+			if (this.czEnrolAsked || !offlineTillOn() || !boundTill()) return;
+			if (isEnrolled(frappe.session.user)) return;
+			this.czEnrolAsked = true;
+			this.czEnrol = true;
+		},
+		czEnrolDone() {
+			this.czEnrol = false;
 		},
 		checkLoadingComplete() {
 			if (this.itemsLoaded && this.customersLoaded) {
@@ -125,6 +175,11 @@ export default {
 			this.eventBus.on("close_opening_dialog", () => {
 				this.dialog = false;
 			});
+			this.eventBus.on("cz_offline_start", () => {
+				if (actor()) this.czSignedIn();
+				else this.czSignIn = true;
+			});
+			this.eventBus.on("cz_offer_enrol", () => this.czOfferEnrol());
 			this.eventBus.on("register_pos_data", (data) => {
 				this.pos_profile = data.pos_profile;
 				this.get_offers(this.pos_profile.name, this.pos_profile);
@@ -173,6 +228,8 @@ export default {
 	},
 	beforeUnmount() {
 		this.eventBus.off("close_opening_dialog");
+		this.eventBus.off("cz_offline_start");
+		this.eventBus.off("cz_offer_enrol");
 		this.eventBus.off("register_pos_data");
 		this.eventBus.off("register_pos_profile");
 		this.eventBus.off("LoadPosProfile");

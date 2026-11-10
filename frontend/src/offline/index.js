@@ -100,6 +100,30 @@ export {
 	syncOfflinePayments,
 } from "./sync.js";
 
+// Cake Zone offline till (10 Nov 2026)
+export {
+	offlineTillOn,
+	boundTill,
+	people,
+	peopleForTill,
+	isEnrolled,
+	enroll,
+	verify,
+	actor,
+	applyActor,
+	setActor,
+	clearActor,
+	rememberProfile,
+	profileBundle,
+	afterSignIn,
+	openOffline,
+	pendingOpeningCount,
+	realShift,
+	sellPastStock,
+	syncOfflineOpenings,
+} from "./cz_offline.js";
+export { canReachServer } from "./sync.js";
+
 // Items exports
 export {
 	saveItemUOMs,

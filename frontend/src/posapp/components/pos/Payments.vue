@@ -1425,8 +1425,8 @@ export default {
 							)
 							.join("\n");
 						const blocking =
-							!this.stock_settings.allow_negative_stock ||
-							this.pos_profile.posa_block_sale_beyond_available_qty;
+							(!this.stock_settings.allow_negative_stock ||
+							this.pos_profile.posa_block_sale_beyond_available_qty) && !(window.czSellPastStock && window.czSellPastStock());
 						this.eventBus.emit("show_message", {
 							title: blocking
 								? __("Insufficient stock:\n{0}", [msg])
@@ -1479,12 +1479,18 @@ export default {
 
 			if (isOffline()) {
 				try {
-					saveOfflineInvoice({ data: data, invoice: this.invoice_doc });
+					const saved = saveOfflineInvoice({ data: data, invoice: this.invoice_doc });
 					this.eventBus.emit("pending_invoices_changed", getPendingOfflineInvoiceCount());
 					vm.eventBus.emit("show_message", {
-						title: __("Invoice saved offline"),
+						title:
+							saved && saved.warning
+								? __("Sale saved offline. Note: {0}", [saved.warning])
+								: __("Invoice saved offline"),
 						color: "warning",
 					});
+					if (window.czCanSync && window.czCanSync()) {
+						vm.eventBus.emit("sync_invoices");
+					}
 					if (print) {
 						this.print_offline_invoice(this.invoice_doc);
 					}

@@ -2,6 +2,7 @@
 import { memory, resetOfflineState, setLastSyncTotals, MAX_QUEUE_ITEMS, reduceCacheUsage } from "./cache.js";
 import { persist } from "./core.js";
 import { updateLocalStock, validateStockForOfflineInvoice } from "./stock.js";
+import { offlineTillOn, actor, realShift, personFor, keyCall, syncOfflineOpenings } from "./cz_offline.js";
 
 // Flag to avoid concurrent invoice syncs which can cause duplicate submissions
 let invoiceSyncInProgress = false;
@@ -47,8 +48,24 @@ export function saveOfflineInvoice(entry) {
 	// was split; without it an offline oversell is queued, the receipt prints,
 	// and the server rejects it on sync - by which time the cake has gone.
 	const validation = validateStockForOfflineInvoice(entry.invoice.items);
+	let warning = "";
 	if (!validation.isValid) {
-		throw new Error(validation.errorMessage);
+		// Cake Zone (the owner, 10 Nov 2026): with the offline till on, WARN and sell. The
+		// till's stock figure is only what it last knew; a delivery may have arrived since.
+		if (!offlineTillOn()) {
+			throw new Error(validation.errorMessage);
+		}
+		warning = validation.errorMessage;
+		entry.cz_stock_warning = warning;
+	}
+	if (offlineTillOn()) {
+		// Whose sale this is, so it syncs with their key; and when it happened, so a sale
+		// sent tomorrow is still dated today.
+		const a = actor();
+		entry.cz_user = (a && a.user) || frappe.session.user;
+		entry.invoice.set_posting_time = 1;
+		entry.invoice.posting_date = frappe.datetime.nowdate();
+		entry.invoice.posting_time = frappe.datetime.now_time();
 	}
 
 	const key = "offline_invoices";
@@ -76,6 +93,16 @@ export function saveOfflineInvoice(entry) {
 	if (entry.invoice && entry.invoice.items) {
 		updateLocalStock(entry.invoice.items);
 	}
+	return { warning };
+}
+
+// Can the queue be sent? Not the same question as isOffline() once the offline till is on:
+// a person signed in offline keeps selling "offline" after the line returns, while the
+// queue goes out in the background with their key.
+export function canReachServer() {
+	if (memory.manual_offline) return false;
+	if (typeof window === "undefined") return true;
+	return window.navigator.onLine && window.serverOnline !== false;
 }
 
 export function isOffline() {
@@ -83,6 +110,12 @@ export function isOffline() {
 	if (typeof window === "undefined") {
 		// Not in a browser (SSR/Node), assume online (or handle explicitly if needed)
 		return memory.manual_offline || false;
+	}
+
+	// Cake Zone: signed in on the till's own sign-in screen, there is no server session to
+	// sell on, so keep saving offline; the queue still syncs (canReachServer).
+	if (offlineTillOn() && actor()) {
+		return true;
 	}
 
 	const { protocol, hostname, navigator } = window;
@@ -237,6 +270,12 @@ export async function syncOfflineInvoices() {
 		// referencing them do not fail during submission
 		await syncOfflineCustomers();
 
+		// Cake Zone: shifts opened offline go first; their sales cannot arrive before them.
+		let openings = null;
+		if (offlineTillOn() && canReachServer()) {
+			openings = await syncOfflineOpenings();
+		}
+
 		const invoices = getOfflineInvoices();
 		if (!invoices.length) {
 			// No invoices to sync; clear last totals to avoid repeated messages
@@ -244,7 +283,7 @@ export async function syncOfflineInvoices() {
 			setLastSyncTotals(totals);
 			return totals;
 		}
-		if (isOffline()) {
+		if (offlineTillOn() ? !canReachServer() : isOffline()) {
 			// When offline just return the pending count without attempting a sync
 			return { pending: invoices.length, synced: 0, drafted: 0 };
 		}
@@ -257,24 +296,57 @@ export async function syncOfflineInvoices() {
 		let drafted = 0;
 
 		for (const inv of invoices) {
+			// Cake Zone: a sale on a shift opened offline waits until that shift is on the
+			// server, then carries the real shift's name; and it goes with its seller's key.
+			let person = null;
+			if (offlineTillOn()) {
+				const shift = inv.invoice && inv.invoice.posa_pos_opening_shift;
+				if (shift && String(shift).startsWith("OFF-")) {
+					const real = realShift(shift);
+					if (!real) {
+						failures.push(inv);
+						continue;
+					}
+					inv.invoice.posa_pos_opening_shift = real;
+				}
+				person = personFor(inv.cz_user);
+			}
 			try {
-				await frappe.call({
-					method: "posawesome.posawesome.api.invoices.submit_invoice",
-					args: {
-						invoice: inv.invoice,
-						data: inv.data,
-					},
-				});
+				if (person) {
+					await keyCall(person, "posawesome.posawesome.api.invoices.submit_invoice", {
+						invoice: JSON.stringify(inv.invoice),
+						data: JSON.stringify(inv.data),
+					});
+				} else {
+					await frappe.call({
+						method: "posawesome.posawesome.api.invoices.submit_invoice",
+						args: {
+							invoice: inv.invoice,
+							data: inv.data,
+						},
+					});
+				}
 				synced++;
 			} catch (error) {
-				const reason = describeSyncError(error);
+				if (person && (!error.status || error.status === 401 || error.status === 403)) {
+					// Not refused on its merits (no connection, or the key was not accepted):
+					// keep it on the PC and send it again, never park it as a draft.
+					console.error("Offline sale not sent; kept on the till", error);
+					failures.push(inv);
+					continue;
+				}
+				const reason = person ? error.message : describeSyncError(error);
 				console.error("Failed to submit invoice, saving as draft", error);
 				let parkedAs = inv.invoice?.name || "";
 				try {
-					const res = await frappe.call({
-						method: "posawesome.posawesome.api.invoices.update_invoice",
-						args: { data: inv.invoice },
-					});
+					const res = person
+						? await keyCall(person, "posawesome.posawesome.api.invoices.update_invoice", {
+								data: JSON.stringify(inv.invoice),
+							})
+						: await frappe.call({
+								method: "posawesome.posawesome.api.invoices.update_invoice",
+								args: { data: inv.invoice },
+							});
 					parkedAs = res?.message?.name || parkedAs;
 					drafted += 1;
 				} catch (draftErr) {
@@ -307,7 +379,7 @@ export async function syncOfflineInvoices() {
 			}
 		}
 
-		const totals = { pending: pendingLeft, synced, drafted, rejected };
+		const totals = { pending: pendingLeft, synced, drafted, rejected, openings };
 		if (pendingLeft || drafted) {
 			// Persist totals only if there are invoices still pending or drafted
 			setLastSyncTotals(totals);
