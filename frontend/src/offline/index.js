@@ -121,6 +121,10 @@ export {
 	realShift,
 	sellPastStock,
 	syncOfflineOpenings,
+	offlineClosingData,
+	closeOffline,
+	pendingClosingCount,
+	syncOfflineClosings,
 } from "./cz_offline.js";
 export { canReachServer } from "./sync.js";
 

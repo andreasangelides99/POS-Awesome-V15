@@ -12,6 +12,9 @@ import {
     actor,
     pendingOpeningCount,
     syncOfflineOpenings,
+    isOffline,
+    offlineClosingData,
+    closeOffline,
 } from "../../offline/index.js";
 import { silentPrint } from "../plugins/print.js";
 import { cachePrintTemplateAndTerms } from "../../utils/pos_profile.js";
@@ -169,15 +172,17 @@ export function usePosShift(openDialog) {
     }
 
     function get_closing_data() {
-        if (offlineTillOn() && actor()) {
-            // Step 1 of the offline till does not close offline: the count waits for the
-            // server. Signed in offline there is no server session to close with either.
-            eventBus?.emit("show_message", {
-                title: navigator.onLine && window.serverOnline !== false
-                    ? __("The internet is back. Sign out and sign in again, then close the shift.")
-                    : __("The shift is closed once the internet is back. Keep selling for now."),
-                color: "warning",
-            });
+        if (offlineTillOn() && isOffline()) {
+            // Step 2 (10 Nov 2026): count and close on the PC. The close goes to ERP after
+            // this shift's sales, and ERP works out the expected figures then.
+            const cur = getOpeningStorage() || {};
+            const shift = (pos_opening_shift.value && pos_opening_shift.value.name) ? pos_opening_shift.value : cur.pos_opening_shift;
+            const profile = (pos_profile.value && pos_profile.value.name) ? pos_profile.value : cur.pos_profile;
+            if (!shift || !profile) {
+                eventBus?.emit("show_message", { title: __("No open shift on this till."), color: "error" });
+                return Promise.resolve();
+            }
+            eventBus?.emit("open_ClosingDialog", offlineClosingData(profile, shift));
             return Promise.resolve();
         }
         return frappe
@@ -193,6 +198,19 @@ export function usePosShift(openDialog) {
     }
 
     function submit_closing_pos(data) {
+        if (data && data.cz_offline) {
+            closeOffline(data);
+            pos_opening_shift.value = null;
+            pos_profile.value = null;
+            clearOpeningStorage();
+            clearActor();
+            eventBus?.emit("show_message", {
+                title: __("Shift closed offline. It goes to ERP after its sales; the supervisor prints the Z report then."),
+                color: "warning",
+            });
+            check_opening_entry();
+            return;
+        }
         frappe
             .call(
                 "posawesome.posawesome.doctype.pos_closing_shift.pos_closing_shift.submit_closing_shift",

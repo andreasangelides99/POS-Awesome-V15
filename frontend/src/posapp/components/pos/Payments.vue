@@ -1846,7 +1846,11 @@ export default {
 						if (vm.pos_profile.posa_local_storage) {
 							setSalesPersonsStorage(vm.sales_persons);
 						}
-					} else {
+					} else if (r && Array.isArray(r.message)) {
+						// Cake Zone (10 Nov 2026): only a real answer of "nobody" empties the
+						// list. With no server the call still lands here with nothing, and
+						// emptying it wiped the saved list - so offline no sales person could
+						// be chosen and, the field being compulsory, no sale completed.
 						vm.sales_persons = [];
 					}
 				},

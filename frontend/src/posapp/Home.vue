@@ -71,6 +71,7 @@ import {
 	actor,
 	clearActor,
 	pendingOpeningCount,
+	pendingClosingCount,
 } from "../offline/index.js";
 import { silentPrint } from "./plugins/print.js";
 import {
@@ -166,6 +167,22 @@ export default {
 		Payments,
 	},
 	mounted() {
+		// Cake Zone offline till (10 Nov 2026): anything still on the PC - an opening, a sale
+		// or a close - is retried every minute while the server answers. Otherwise a send
+		// refused once waited for the next connection change or the next sale.
+		if (offlineTillOn()) {
+			this.czRetryTimer = setInterval(async () => {
+				if (!canReachServer()) return;
+				if (!getPendingOfflineInvoiceCount() && !pendingOpeningCount() && !pendingClosingCount()) return;
+				try {
+					const result = await syncOfflineInvoices();
+					if (result && (result.synced || result.drafted)) reportSyncOutcome(result, this.eventBus);
+					this.pendingInvoices = getPendingOfflineInvoiceCount();
+				} catch (e) {
+					console.warn("Background offline sync failed", e);
+				}
+			}, 60000);
+		}
 		this.remove_frappe_nav();
 		// Initialize cache ready state early from stored value
 		this.cacheReady = isCacheReady();
@@ -515,6 +532,7 @@ export default {
 		},
 	},
 	beforeUnmount() {
+		if (this.czRetryTimer) clearInterval(this.czRetryTimer);
 		if (this.eventBus) {
 			this.eventBus.off("pending_invoices_changed");
 			this.eventBus.off("data-loaded");

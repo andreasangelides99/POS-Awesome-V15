@@ -11,11 +11,12 @@
 //   cz_offline_openings    shifts opened offline that the server has not seen yet
 //   cz_offline_shift_map   offline shift id -> the real shift's name, once synced
 // and in sessionStorage the person signed in offline (cz_offline_actor).
-import { getOpeningStorage, setOpeningStorage } from "./cache.js";
+import { getOpeningStorage, setOpeningStorage, memory } from "./cache.js";
 
 const PEOPLE = "cz_offline_people";
 const OPENINGS = "cz_offline_openings";
 const SHIFT_MAP = "cz_offline_shift_map";
+const CLOSINGS = "cz_offline_closings";
 const ACTOR = "cz_offline_actor";
 const PROFILE = (name) => `cz_offline_profile:${name}`;
 const ITERATIONS = 150000;
@@ -340,6 +341,98 @@ export async function syncOfflineOpenings() {
 		}
 	}
 	write(OPENINGS, left);
+	result.pending = left.length;
+	return result;
+}
+
+// ---- closing a shift offline (step 2, 10 Nov 2026) ----------------------------------------
+
+const DENOMINATIONS = ["custom_n_r200", "custom_n_r100", "custom_n_r50", "custom_n_r20", "custom_n_r10",
+	"custom_n_r5", "custom_n_r2", "custom_n_r1", "custom_n_c50", "custom_n_c20", "custom_n_c10"];
+
+// What the closing window needs, built on the PC. The expected figures are not known here and
+// are hidden from the branch anyway (hide_expected_amount); the server works them out from the
+// synced sales when the close arrives.
+export function offlineClosingData(profile, shift) {
+	const modes = [];
+	const add = (m) => m && !modes.includes(m) && modes.push(m);
+	(profile && profile.payments ? profile.payments : []).forEach((p) => add(p.mode_of_payment));
+	(shift && shift.balance_details ? shift.balance_details : []).forEach((b) => add(b.mode_of_payment));
+	const opening = {};
+	(shift && shift.balance_details ? shift.balance_details : []).forEach((b) => (opening[b.mode_of_payment] = b.amount));
+	const rows = modes.map((m) => ({ mode_of_payment: m, opening_amount: opening[m] || 0, expected_amount: 0, closing_amount: 0 }));
+	return {
+		doctype: "POS Closing Shift",
+		pos_opening_shift: shift.name,
+		pos_profile: profile.name,
+		user: shift.user,
+		period_start_date: shift.period_start_date,
+		payment_reconciliation: rows,
+		cz_offline: 1,
+	};
+}
+
+export function closeOffline(data) {
+	const a = actor();
+	const counted_by = (a && a.user) || frappe.session.user;
+	const denominations = {};
+	DENOMINATIONS.forEach((k) => {
+		if (data[k] !== undefined && data[k] !== null && data[k] !== "") denominations[k] = parseFloat(data[k]) || 0;
+	});
+	const closing_amounts = {};
+	(data.payment_reconciliation || []).forEach((r) => (closing_amounts[r.mode_of_payment] = parseFloat(r.closing_amount) || 0));
+	const queue = read(CLOSINGS, []);
+	queue.push({
+		client_id: "OFFC-" + crypto.randomUUID(),
+		opening_shift: data.pos_opening_shift,
+		counted_by,
+		period_end_date: frappe.datetime.now_datetime(),
+		denominations,
+		closing_amounts,
+	});
+	write(CLOSINGS, queue);
+}
+
+export function pendingClosingCount() {
+	return read(CLOSINGS, []).length;
+}
+
+// Closes last: only once every sale of that shift has left the PC, so ERP's expected figures
+// include them all. A shift still unsynced, or refused for a reason worth retrying, waits.
+export async function syncOfflineClosings() {
+	const queue = read(CLOSINGS, []);
+	const result = { synced: 0, pending: 0, conflicts: [], errors: [] };
+	if (!queue.length) return result;
+	const map = read(SHIFT_MAP, {});
+	const left = [];
+	for (const c of queue) {
+		const real = String(c.opening_shift).startsWith("OFF-") ? map[c.opening_shift] : c.opening_shift;
+		const salesWaiting = (memory.offline_invoices || []).some((e) => {
+			const s = e && e.invoice && e.invoice.posa_pos_opening_shift;
+			return s === c.opening_shift || (real && s === real);
+		});
+		const person = personFor(c.counted_by);
+		if (salesWaiting || !real || !person) {
+			if (!person) result.errors.push(__("No offline key on this PC for {0}.", [c.counted_by]));
+			left.push(c);
+			continue;
+		}
+		try {
+			const r = await keyCall(person, "cakezone_erp.api.offline_till.sync_closing", {
+				client_id: c.client_id,
+				opening_shift: real,
+				period_end_date: c.period_end_date,
+				denominations: JSON.stringify(c.denominations || {}),
+				closing_amounts: JSON.stringify(c.closing_amounts || {}),
+			});
+			if (r.message && r.message.conflict) result.conflicts.push(r.message.conflict);
+			result.synced += 1;
+		} catch (e) {
+			left.push(c);
+			result.errors.push(e.message);
+		}
+	}
+	write(CLOSINGS, left);
 	result.pending = left.length;
 	return result;
 }

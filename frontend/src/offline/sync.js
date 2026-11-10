@@ -2,7 +2,7 @@
 import { memory, resetOfflineState, setLastSyncTotals, MAX_QUEUE_ITEMS, reduceCacheUsage } from "./cache.js";
 import { persist } from "./core.js";
 import { updateLocalStock, validateStockForOfflineInvoice } from "./stock.js";
-import { offlineTillOn, actor, realShift, personFor, keyCall, syncOfflineOpenings } from "./cz_offline.js";
+import { offlineTillOn, actor, realShift, personFor, keyCall, syncOfflineOpenings, syncOfflineClosings } from "./cz_offline.js";
 
 // Flag to avoid concurrent invoice syncs which can cause duplicate submissions
 let invoiceSyncInProgress = false;
@@ -278,6 +278,10 @@ export async function syncOfflineInvoices() {
 
 		const invoices = getOfflineInvoices();
 		if (!invoices.length) {
+			// Cake Zone: a close counted offline can go once its shift's sales are all in.
+			if (offlineTillOn() && canReachServer()) {
+				await syncOfflineClosings();
+			}
 			// No invoices to sync; clear last totals to avoid repeated messages
 			const totals = { pending: 0, synced: 0, drafted: 0 };
 			setLastSyncTotals(totals);
@@ -379,7 +383,11 @@ export async function syncOfflineInvoices() {
 			}
 		}
 
-		const totals = { pending: pendingLeft, synced, drafted, rejected, openings };
+		let closings = null;
+		if (offlineTillOn() && canReachServer()) {
+			closings = await syncOfflineClosings();
+		}
+		const totals = { pending: pendingLeft, synced, drafted, rejected, openings, closings };
 		if (pendingLeft || drafted) {
 			// Persist totals only if there are invoices still pending or drafted
 			setLastSyncTotals(totals);
