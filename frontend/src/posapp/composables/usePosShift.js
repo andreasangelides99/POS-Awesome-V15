@@ -8,6 +8,7 @@ import {
     setTaxTemplate,
 } from "../../offline/index.js";
 import { silentPrint } from "../plugins/print.js";
+import { cachePrintTemplateAndTerms } from "../../utils/pos_profile.js";
 import { maySeeZReport } from "../utils/shiftReports.js";
 
 // Not an error - just "this user does not get a Z report".
@@ -29,6 +30,11 @@ export function usePosShift(openDialog) {
             })
             .then((r) => {
                 if (r.message) {
+                    // Cake Zone (10 Nov 2026): save THIS till's receipt layout for offline use
+                    // on every online resume. The only other place that saved it is skipped
+                    // whenever the till learns its profile early, and a till with nothing saved
+                    // printed POS Awesome's own slip offline.
+                    cachePrintTemplateAndTerms(r.message.pos_profile).catch(() => {});
                     pos_profile.value = r.message.pos_profile;
                     pos_opening_shift.value = r.message.pos_opening_shift;
                     if (pos_profile.value.taxes_and_charges) {

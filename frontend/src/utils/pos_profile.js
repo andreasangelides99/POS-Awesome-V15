@@ -6,7 +6,7 @@ import {
         setTermsAndConditions,
 } from "../offline/index.js";
 
-async function cachePrintTemplateAndTerms(profile) {
+export async function cachePrintTemplateAndTerms(profile) {
         if (!profile || typeof frappe === "undefined" || !navigator.onLine) return;
 
         try {

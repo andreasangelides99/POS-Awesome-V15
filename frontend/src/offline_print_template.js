@@ -3,9 +3,11 @@ import {
         getPrintTemplate,
         getBranchAddress,
         getTermsAndConditions,
+        getTaxTemplate,
         memoryInitPromise,
 } from "./offline/index.js";
 import nunjucks from "nunjucks";
+import fillOfflineReceipt from "./offline_receipt_fill.js";
 
 function normaliseTemplate(template) {
         // Nunjucks doesn't understand Python-style triple quotes.
@@ -124,7 +126,7 @@ function defaultOfflineHTML(invoice, terms = "") {
   </html>`;
 }
 
-export default async function renderOfflineInvoiceHTML(invoice) {
+export default async function renderOfflineInvoiceHTML(invoice, opts = {}) {
         if (!invoice) return "";
 
         await memoryInitPromise;
@@ -142,11 +144,15 @@ export default async function renderOfflineInvoiceHTML(invoice) {
                 // has no owner until the server saves it, so take the session user.
                 owner: invoice.owner || (typeof frappe !== "undefined" && frappe.session ? frappe.session.user : ""),
         };
+        // Cake Zone: the number, paid amount, change and VAT the server would have written.
+        fillOfflineReceipt(doc, getTaxTemplate(doc.taxes_and_charges || opts.taxes_and_charges || ""));
         attachFormatter(doc);
         (doc.items || []).forEach(attachFormatter);
         (doc.taxes || []).forEach(attachFormatter);
 
         if (!template) {
+                // Cake Zone: should not happen any more - the layout is saved at every online
+                // opening and resume (usePosShift). If it does, this is POS Awesome's own slip.
                 console.warn("No offline print template cached; using fallback template");
                 return defaultOfflineHTML(doc, doc.terms_and_conditions);
         }
