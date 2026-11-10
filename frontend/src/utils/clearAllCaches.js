@@ -8,7 +8,7 @@ export async function clearLocalStorage(keys = []) {
 			// It says which drawer this PC is; losing it here would make every cache
 			// clear a trip to /till-setup.
 			Object.keys(localStorage)
-				.filter((key) => key !== "cz_till_device")
+				.filter((key) => key !== "cz_till_device" && !key.startsWith("cz_offline_"))
 				.forEach((key) => localStorage.removeItem(key));
 		}
 		console.log("[ClearAllCaches] localStorage cleared", keys.length ? keys : "all");

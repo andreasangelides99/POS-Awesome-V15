@@ -1136,6 +1136,8 @@ export default {
 		},
 		// Watch sales_person to update sales_team
 		sales_person(newVal) {
+			// Before the first sale the invoice is still "" - nothing to put a team on.
+			if (!this.invoice_doc || typeof this.invoice_doc !== "object") return;
 			if (newVal) {
 				this.invoice_doc.sales_team = [
 					{
@@ -1425,8 +1427,8 @@ export default {
 							)
 							.join("\n");
 						const blocking =
-							!this.stock_settings.allow_negative_stock ||
-							this.pos_profile.posa_block_sale_beyond_available_qty;
+							(!this.stock_settings.allow_negative_stock ||
+							this.pos_profile.posa_block_sale_beyond_available_qty) && !(window.czSellPastStock && window.czSellPastStock());
 						this.eventBus.emit("show_message", {
 							title: blocking
 								? __("Insufficient stock:\n{0}", [msg])
@@ -1479,12 +1481,18 @@ export default {
 
 			if (isOffline()) {
 				try {
-					saveOfflineInvoice({ data: data, invoice: this.invoice_doc });
+					const saved = saveOfflineInvoice({ data: data, invoice: this.invoice_doc });
 					this.eventBus.emit("pending_invoices_changed", getPendingOfflineInvoiceCount());
 					vm.eventBus.emit("show_message", {
-						title: __("Invoice saved offline"),
+						title:
+							saved && saved.warning
+								? __("Sale saved offline. Note: {0}", [saved.warning])
+								: __("Invoice saved offline"),
 						color: "warning",
 					});
+					if (window.czCanSync && window.czCanSync()) {
+						vm.eventBus.emit("sync_invoices");
+					}
 					if (print) {
 						this.print_offline_invoice(this.invoice_doc);
 					}
@@ -1840,7 +1848,11 @@ export default {
 						if (vm.pos_profile.posa_local_storage) {
 							setSalesPersonsStorage(vm.sales_persons);
 						}
-					} else {
+					} else if (r && Array.isArray(r.message)) {
+						// Cake Zone (10 Nov 2026): only a real answer of "nobody" empties the
+						// list. With no server the call still lands here with nothing, and
+						// emptying it wiped the saved list - so offline no sales person could
+						// be chosen and, the field being compulsory, no sale completed.
 						vm.sales_persons = [];
 					}
 				},
@@ -2260,6 +2272,13 @@ export default {
 				this.get_mpesa_modes();
 				this.get_eft_setup();
 				this.get_delivery_setup();
+				// Cake Zone (10 Nov 2026): fetch, and so save, the sales people as the till
+				// opens. Before, they were fetched only when PAY was pressed, so a PC whose
+				// saved lists had been cleared (a logout, a cache clear, a new PC) and then
+				// lost the internet before its first sale had no one to choose, and - the
+				// field being compulsory - could not complete a sale offline. The owner hit
+				// it on training the first time he tried.
+				this.get_sales_person_names();
 			});
 			this.eventBus.on("add_the_new_address", (data) => {
 				this.addresses.push(data);

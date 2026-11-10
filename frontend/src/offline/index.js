@@ -35,6 +35,7 @@ export {
 	clearOpeningStorage,
         getOpeningDialogStorage,
         setOpeningDialogStorage,
+	czMirrored,
         getTaxTemplate,
         setTaxTemplate,
         getPrintTemplate,
@@ -99,6 +100,34 @@ export {
 	syncOfflineCustomers,
 	syncOfflinePayments,
 } from "./sync.js";
+
+// Cake Zone offline till (10 Nov 2026)
+export {
+	offlineTillOn,
+	boundTill,
+	people,
+	peopleForTill,
+	isEnrolled,
+	enroll,
+	verify,
+	actor,
+	applyActor,
+	setActor,
+	clearActor,
+	rememberProfile,
+	profileBundle,
+	afterSignIn,
+	openOffline,
+	pendingOpeningCount,
+	realShift,
+	sellPastStock,
+	syncOfflineOpenings,
+	offlineClosingData,
+	closeOffline,
+	pendingClosingCount,
+	syncOfflineClosings,
+} from "./cz_offline.js";
+export { canReachServer } from "./sync.js";
 
 // Items exports
 export {

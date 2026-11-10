@@ -150,9 +150,15 @@ import format from "../../format";
 import {
 	getOpeningDialogStorage,
 	setOpeningDialogStorage,
+	czMirrored,
 	setOpeningStorage,
 	initPromise,
 	checkDbHealth,
+	offlineTillOn,
+	isOffline,
+	actor,
+	openOffline,
+	rememberProfile,
 } from "../../../offline/index.js";
 import { cachePrintTemplateAndTerms } from "../../../utils/pos_profile.js";
 
@@ -298,7 +304,8 @@ export default {
 			await checkDbHealth();
 
 			// Load cached data first for offline usage
-			const cached = getOpeningDialogStorage();
+			// Cake Zone: a logout empties the till's cache; the offline copy survives it.
+			const cached = getOpeningDialogStorage() || (offlineTillOn() ? czMirrored("cz_offline_dialog") : null);
 			if (cached) {
 				try {
 					vm.companies = cached.companies.map((c) => c.name);
@@ -341,6 +348,32 @@ export default {
 			this.error_message = "";
 			const vm = this;
 
+			// Only after the till's own sign-in: a connection indicator that flickers must never
+			// send a normal opening down the offline path.
+			if (offlineTillOn() && actor()) {
+				// Cake Zone (10 Nov 2026): open on the PC; the shift is sent when the line is back.
+				try {
+					const data = openOffline({
+						pos_profile: this.pos_profile,
+						company: this.company,
+						balance_details: this.payments_methods,
+					});
+					setOpeningStorage(data);
+					vm.eventBus.emit("register_pos_data", data);
+					vm.eventBus.emit("set_company", data.company);
+					vm.eventBus.emit("show_message", {
+						title: __("Shift opened offline. It goes to ERP when the internet is back."),
+						color: "warning",
+					});
+					vm.close_opening_dialog();
+				} catch (e) {
+					vm.error_message = (e && e.message) || String(e);
+				} finally {
+					vm.is_loading = false;
+				}
+				return;
+			}
+
 			return frappe
 				.call("posawesome.posawesome.api.shifts.create_opening_voucher", {
 					pos_profile: this.pos_profile,
@@ -349,10 +382,12 @@ export default {
 				})
 				.then((r) => {
 					if (r.message) {
+						rememberProfile(r.message);
 						// Cake Zone (10 Nov 2026): save this till's receipt layout for offline use.
 						cachePrintTemplateAndTerms(r.message.pos_profile).catch(() => {});
 						vm.eventBus.emit("register_pos_data", r.message);
 						vm.eventBus.emit("set_company", r.message.company);
+						vm.eventBus.emit("cz_offer_enrol");
 						try {
 							setOpeningStorage(r.message);
 						} catch (e) {

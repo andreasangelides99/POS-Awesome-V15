@@ -66,6 +66,12 @@ import {
 	isOffline,
 	getLastSyncTotals,
 	reportSyncOutcome,
+	offlineTillOn,
+	canReachServer,
+	actor,
+	clearActor,
+	pendingOpeningCount,
+	pendingClosingCount,
 } from "../offline/index.js";
 import { silentPrint } from "./plugins/print.js";
 import {
@@ -161,6 +167,26 @@ export default {
 		Payments,
 	},
 	mounted() {
+		// Cake Zone offline till (10 Nov 2026): anything still on the PC - an opening, a sale
+		// or a close - is retried every minute while the server answers. Otherwise a send
+		// refused once waited for the next connection change or the next sale.
+		if (offlineTillOn()) {
+			this.czRetryTimer = setInterval(async () => {
+				if (!canReachServer()) return;
+				if (!getPendingOfflineInvoiceCount() && !pendingOpeningCount() && !pendingClosingCount()) {
+					// Signed in offline, internet back, nothing left to send: time to log in again.
+					if (actor()) this.eventBus.emit("cz_back_online");
+					return;
+				}
+				try {
+					const result = await syncOfflineInvoices();
+					if (result && (result.synced || result.drafted)) reportSyncOutcome(result, this.eventBus);
+					this.pendingInvoices = getPendingOfflineInvoiceCount();
+				} catch (e) {
+					console.warn("Background offline sync failed", e);
+				}
+			}, 60000);
+		}
 		this.remove_frappe_nav();
 		// Initialize cache ready state early from stored value
 		this.cacheReady = isCacheReady();
@@ -383,10 +409,16 @@ export default {
 					color: "warning",
 				});
 			}
-			if (isOffline()) {
+			if (offlineTillOn() ? !canReachServer() : isOffline()) {
 				return;
 			}
 			const result = await syncOfflineInvoices();
+			if (offlineTillOn() && actor() && result && !result.pending && !pendingOpeningCount()) {
+				this.eventBus.emit("show_message", {
+					title: __("The internet is back and this till's offline sales are in ERP. Sign out and sign in again when you have a moment."),
+					color: "info",
+				});
+			}
 			reportSyncOutcome(result, this.eventBus);
 			this.pendingInvoices = getPendingOfflineInvoiceCount();
 			this.syncTotals = result || this.syncTotals;
@@ -420,6 +452,14 @@ export default {
 			// have not synced yet, and wiping them on the way out would throw away sales
 			// taken during a signal outage - the one thing offline capture exists to
 			// protect. They survive the logout and sync on the next sign-in.
+			if (offlineTillOn() && actor()) {
+				// Signed in on the till's own screen: there is no server session to end.
+				clearActor();
+				if (!canReachServer()) {
+					window.location.reload();
+					return;
+				}
+			}
 			const leave = () => window.location.replace("/login");
 			let r;
 			try {
@@ -496,6 +536,7 @@ export default {
 		},
 	},
 	beforeUnmount() {
+		if (this.czRetryTimer) clearInterval(this.czRetryTimer);
 		if (this.eventBus) {
 			this.eventBus.off("pending_invoices_changed");
 			this.eventBus.off("data-loaded");

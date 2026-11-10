@@ -188,6 +188,7 @@
 											!!item.posa_is_replace ||
 											((!stock_settings.allow_negative_stock ||
 												pos_profile.posa_block_sale_beyond_available_qty) &&
+												!czSellPastStock() &&
 												item.max_qty !== undefined &&
 												item.qty >= item.max_qty)
 										"

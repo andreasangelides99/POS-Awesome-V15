@@ -293,6 +293,29 @@ export function setSalesPersonsStorage(data) {
 	}
 }
 
+// Cake Zone offline till (10 Nov 2026): a copy of the open shift and of the opening window's
+// lists, kept in localStorage under cz_offline_* - which a logout and Clear Cache both leave
+// alone. The owner logged out, lost the internet, signed in offline and was offered an
+// EMPTY opening window for a shift that was still open: the logout had wiped both from
+// IndexedDB. Only written on sites with the offline till switched on.
+function czMirror(key, value) {
+	try {
+		if (typeof frappe === "undefined" || !frappe.boot || !frappe.boot.cz_offline_till) return;
+		if (value === null || value === undefined) localStorage.removeItem(key);
+		else localStorage.setItem(key, JSON.stringify(value));
+	} catch (e) {
+		console.warn("Could not keep an offline copy of", key, e);
+	}
+}
+
+export function czMirrored(key) {
+	try {
+		return JSON.parse(localStorage.getItem(key) || "null");
+	} catch (e) {
+		return null;
+	}
+}
+
 export function getOpeningStorage() {
 	return memory.pos_opening_storage || null;
 }
@@ -308,6 +331,7 @@ export function setOpeningStorage(data) {
 		}
 		memory.pos_opening_storage = clean;
 		persist("pos_opening_storage", memory.pos_opening_storage);
+		czMirror("cz_offline_opening", clean);
 	} catch (e) {
 		console.error("Failed to set opening storage", e);
 	}
@@ -317,6 +341,7 @@ export function clearOpeningStorage() {
 	try {
 		memory.pos_opening_storage = null;
 		persist("pos_opening_storage", memory.pos_opening_storage);
+		czMirror("cz_offline_opening", null);
 	} catch (e) {
 		console.error("Failed to clear opening storage", e);
 	}
@@ -337,6 +362,7 @@ export function setOpeningDialogStorage(data) {
 		}
 		memory.opening_dialog_storage = clean;
 		persist("opening_dialog_storage", memory.opening_dialog_storage);
+		czMirror("cz_offline_dialog", clean);
 	} catch (e) {
 		console.error("Failed to set opening dialog storage", e);
 	}

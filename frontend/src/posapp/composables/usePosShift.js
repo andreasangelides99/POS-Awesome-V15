@@ -6,6 +6,15 @@ import {
     setOpeningStorage,
     clearOpeningStorage,
     setTaxTemplate,
+    offlineTillOn,
+    rememberProfile,
+    clearActor,
+    actor,
+    pendingOpeningCount,
+    syncOfflineOpenings,
+    isOffline,
+    offlineClosingData,
+    closeOffline,
 } from "../../offline/index.js";
 import { silentPrint } from "../plugins/print.js";
 import { cachePrintTemplateAndTerms } from "../../utils/pos_profile.js";
@@ -21,7 +30,12 @@ export function usePosShift(openDialog) {
     const pos_profile = ref(null);
     const pos_opening_shift = ref(null);
 
-    async function check_opening_entry() {
+    // Cake Zone offline till: a call that never reached the server, as opposed to a refusal.
+    function unreachable(err) {
+        return !navigator.onLine || window.serverOnline === false || !err || err.status === 0;
+    }
+
+    async function check_opening_entry(czRetried = false) {
         await initPromise;
         await checkDbHealth();
         return frappe
@@ -29,6 +43,13 @@ export function usePosShift(openDialog) {
                 user: frappe.session.user,
             })
             .then((r) => {
+                if (r.message && offlineTillOn()) {
+                    // A real session answered: nobody is signed in offline any more, and
+                    // this till's profile is kept for the next outage.
+                    clearActor();
+                    rememberProfile(r.message);
+                    eventBus?.emit("cz_offer_enrol");
+                }
                 if (r.message) {
                     // Cake Zone (10 Nov 2026): save THIS till's receipt layout for offline use
                     // on every online resume. The only other place that saved it is skipped
@@ -102,8 +123,23 @@ export function usePosShift(openDialog) {
                         console.error("Failed to cache opening data", e);
                     }
                 } else {
+                    if (offlineTillOn() && !czRetried && pendingOpeningCount()) {
+                        // A shift opened offline has not reached the server yet. Send it
+                        // first, or this would offer to open a second shift.
+                        return syncOfflineOpenings().then(() => check_opening_entry(true));
+                    }
                     window.cz_stale_shift = null;
                     window.cz_shift_block = null;
+                    // Cake Zone: the server says no shift is open for this person (closed
+                    // elsewhere, or never), so the offline copy must not resume one.
+                    try {
+                        const kept = JSON.parse(localStorage.getItem("cz_offline_opening") || "null");
+                        if (kept && kept.pos_opening_shift && kept.pos_opening_shift.user === frappe.session.user) {
+                            localStorage.removeItem("cz_offline_opening");
+                        }
+                    } catch (e) {
+                        /* ignore */
+                    }
                     const data = getOpeningStorage();
                     if (data) {
                         pos_profile.value = data.pos_profile;
@@ -121,7 +157,30 @@ export function usePosShift(openDialog) {
                     openDialog && openDialog();
                 }
             })
-            .catch(() => {
+            .catch(async (err) => {
+                if (offlineTillOn() && unreachable(err)) {
+                    // Still marked as signed in offline, yet a person may have logged in on the
+                    // login page since (the tab keeps the offline sign-in, and while it is set ERP
+                    // calls are not even tried). Ask ERP directly: a real login ends the offline one.
+                    if (!czRetried && actor() && navigator.onLine) {
+                        try {
+                            const res = await fetch("/api/method/frappe.auth.get_logged_user", {
+                                credentials: "same-origin",
+                                headers: { Accept: "application/json" },
+                            });
+                            const who = res.ok ? (await res.json()).message : null;
+                            if (who && who !== "Guest") {
+                                clearActor();
+                                return check_opening_entry(true);
+                            }
+                        } catch (e) {
+                            /* no server after all */
+                        }
+                    }
+                    // No server: the till's own sign-in decides who sells (Pos.vue).
+                    eventBus?.emit("cz_offline_start");
+                    return;
+                }
                 const data = getOpeningStorage();
                 if (data) {
                     pos_profile.value = data.pos_profile;
@@ -141,6 +200,19 @@ export function usePosShift(openDialog) {
     }
 
     function get_closing_data() {
+        if (offlineTillOn() && isOffline()) {
+            // Step 2 (10 Nov 2026): count and close on the PC. The close goes to ERP after
+            // this shift's sales, and ERP works out the expected figures then.
+            const cur = getOpeningStorage() || {};
+            const shift = (pos_opening_shift.value && pos_opening_shift.value.name) ? pos_opening_shift.value : cur.pos_opening_shift;
+            const profile = (pos_profile.value && pos_profile.value.name) ? pos_profile.value : cur.pos_profile;
+            if (!shift || !profile) {
+                eventBus?.emit("show_message", { title: __("No open shift on this till."), color: "error" });
+                return Promise.resolve();
+            }
+            eventBus?.emit("open_ClosingDialog", offlineClosingData(profile, shift));
+            return Promise.resolve();
+        }
         return frappe
             .call(
                 "posawesome.posawesome.doctype.pos_closing_shift.pos_closing_shift.make_closing_shift_from_opening",
@@ -154,6 +226,19 @@ export function usePosShift(openDialog) {
     }
 
     function submit_closing_pos(data) {
+        if (data && data.cz_offline) {
+            closeOffline(data);
+            pos_opening_shift.value = null;
+            pos_profile.value = null;
+            clearOpeningStorage();
+            clearActor();
+            eventBus?.emit("show_message", {
+                title: __("Shift closed offline. It goes to ERP after its sales; the supervisor prints the Z report then."),
+                color: "warning",
+            });
+            check_opening_entry();
+            return;
+        }
         frappe
             .call(
                 "posawesome.posawesome.doctype.pos_closing_shift.pos_closing_shift.submit_closing_shift",
