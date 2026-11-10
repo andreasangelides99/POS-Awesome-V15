@@ -108,6 +108,7 @@ export {
 	people,
 	peopleForTill,
 	isEnrolled,
+	checkPeople,
 	enroll,
 	verify,
 	actor,

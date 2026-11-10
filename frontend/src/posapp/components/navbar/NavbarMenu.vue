@@ -131,6 +131,22 @@
 
 				<v-divider class="menu-section-divider-compact"></v-divider>
 
+				<v-list-item v-if="czCanEnrol()" @click="czEnrolNow" class="menu-item-compact primary-action">
+					<template v-slot:prepend>
+						<div class="menu-icon-wrapper-compact primary-icon">
+							<v-icon color="white" size="16">mdi-account-key-outline</v-icon>
+						</div>
+					</template>
+					<div class="menu-content-compact">
+						<v-list-item-title class="menu-item-title-compact">{{
+							__("Set up offline sign-in")
+						}}</v-list-item-title>
+						<v-list-item-subtitle class="menu-item-subtitle-compact">{{
+							__("So you can sign in here with no internet")
+						}}</v-list-item-subtitle>
+					</div>
+				</v-list-item>
+
 				<v-list-item @click="$emit('show-about')" class="menu-item-compact neutral-action">
 					<template v-slot:prepend>
 						<div class="menu-icon-wrapper-compact neutral-icon">
@@ -303,6 +319,7 @@
 
 <script>
 /* global frappe */
+import { offlineTillOn, actor } from "../../../offline/index.js";
 const FALLBACK_LANGUAGES = [
 	{ code: "en", name: "English", native_name: "English" },
 	{ code: "ar", name: "العربية", native_name: "العربية" },
@@ -358,6 +375,13 @@ export default {
 		this.initializeWesternNumerals();
 	},
 	methods: {
+		// Cake Zone offline till: only online, with a real login (not signed in offline).
+		czCanEnrol() {
+			return offlineTillOn() && !actor() && this.networkOnline !== false && this.serverOnline !== false;
+		},
+		czEnrolNow() {
+			window.dispatchEvent(new CustomEvent("cz_enrol_now"));
+		},
 		initializeWesternNumerals() {
 			try {
 				const stored = localStorage.getItem("use_western_numerals");

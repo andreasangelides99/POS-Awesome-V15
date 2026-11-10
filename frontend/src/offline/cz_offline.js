@@ -78,13 +78,52 @@ export function people() {
 
 export function peopleForTill(till) {
 	return Object.values(people())
-		.filter((p) => p.pos_profile === till)
+		// A person whose password changed elsewhere is not offered until they set up again.
+		.filter((p) => p.pos_profile === till && !p.stale)
 		.sort((a, b) => (a.full_name || "").localeCompare(b.full_name || ""));
 }
 
 export function isEnrolled(user) {
 	const p = people()[user];
-	return !!(p && boundTill() && p.pos_profile === boundTill());
+	return !!(p && !p.stale && boundTill() && p.pos_profile === boundTill());
+}
+
+// Online, at every start: ask ERP which people on this PC may still sign in offline (the owner,
+// 10 Nov 2026: "what happens if that user leaves?"). The PC alone can never know.
+//   gone              cancelled key, disabled login, or this PC taken off its till: the person
+//                     comes off this PC. Any sale of theirs still waiting then goes with the
+//                     logged-in session, so it reaches ERP rather than sticking.
+//   password_changed  the old password stops working offline; their key stays, so their waiting
+//                     sales still go, and they are asked to set up again at their next login.
+export async function checkPeople() {
+	if (!offlineTillOn() || actor()) return;
+	const device_id = device().device_id;
+	const all = people();
+	const ids = Object.values(all).map((p) => p.key_id).filter(Boolean);
+	if (!device_id || !ids.length) return;
+	let status;
+	try {
+		const r = await frappe.call({
+			method: "cakezone_erp.api.offline_till.key_status",
+			args: { device_id, key_ids: JSON.stringify(ids) },
+		});
+		status = (r && r.message) || {};
+	} catch (e) {
+		return; // no answer: change nothing
+	}
+	let changed = false;
+	for (const [user, p] of Object.entries(all)) {
+		const s = status[p.key_id];
+		if (s === "gone") {
+			delete all[user];
+			changed = true;
+		} else if (s === "password_changed" && !p.stale) {
+			p.stale = 1;
+			delete p.verifier;
+			changed = true;
+		}
+	}
+	if (changed) write(PEOPLE, all);
 }
 
 // Online, once per person per PC: the server checks the password and issues a key.
@@ -121,7 +160,7 @@ export async function enroll(password) {
 // Offline: the password is checked against the PC's own copy. Nothing leaves the PC.
 export async function verify(user, password) {
 	const p = people()[user];
-	if (!p || !password) return null;
+	if (!p || p.stale || !p.verifier || !password) return null;
 	const v = await derive(password, p.salt, p.iterations || ITERATIONS);
 	return v === p.verifier ? p : null;
 }
