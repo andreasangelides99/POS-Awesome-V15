@@ -11,7 +11,7 @@
 //   cz_offline_openings    shifts opened offline that the server has not seen yet
 //   cz_offline_shift_map   offline shift id -> the real shift's name, once synced
 // and in sessionStorage the person signed in offline (cz_offline_actor).
-import { getOpeningStorage, setOpeningStorage, memory } from "./cache.js";
+import { getOpeningStorage, setOpeningStorage, setOpeningDialogStorage, czMirrored, memory } from "./cache.js";
 
 const PEOPLE = "cz_offline_people";
 const OPENINGS = "cz_offline_openings";
@@ -173,6 +173,13 @@ export function rememberProfile(data) {
 	} catch (e) {
 		console.warn("Could not keep the till's profile for offline use", e);
 	}
+	// The opening window's lists (company, till, cash float rows) are fetched only when that
+	// window opens online. A till that only ever CARRIED ON a shift online never had them,
+	// and offline its opening window was empty. Fetch them now, while there is a server.
+	frappe
+		.call({ method: "posawesome.posawesome.api.shifts.get_opening_dialog_data", args: {} })
+		.then((r) => r && r.message && setOpeningDialogStorage(r.message))
+		.catch(() => {});
 }
 
 export function profileBundle(name) {
@@ -185,7 +192,15 @@ export function profileBundle(name) {
 //   { open: true }     no shift open: open one
 export function afterSignIn() {
 	const a = actor();
-	const cur = getOpeningStorage();
+	let cur = getOpeningStorage();
+	if (!cur) {
+		// A logout wiped the till's own copy; the offline copy names this till's open shift.
+		const kept = czMirrored("cz_offline_opening");
+		if (kept && kept.pos_profile && kept.pos_profile.name === boundTill()) {
+			cur = kept;
+			setOpeningStorage(kept);
+		}
+	}
 	const shift = cur && cur.pos_opening_shift;
 	if (shift && shift.name && shift.status !== "Closed") {
 		if (shift.user === a.user) return { resume: cur };

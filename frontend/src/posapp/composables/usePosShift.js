@@ -130,6 +130,16 @@ export function usePosShift(openDialog) {
                     }
                     window.cz_stale_shift = null;
                     window.cz_shift_block = null;
+                    // Cake Zone: the server says no shift is open for this person (closed
+                    // elsewhere, or never), so the offline copy must not resume one.
+                    try {
+                        const kept = JSON.parse(localStorage.getItem("cz_offline_opening") || "null");
+                        if (kept && kept.pos_opening_shift && kept.pos_opening_shift.user === frappe.session.user) {
+                            localStorage.removeItem("cz_offline_opening");
+                        }
+                    } catch (e) {
+                        /* ignore */
+                    }
                     const data = getOpeningStorage();
                     if (data) {
                         pos_profile.value = data.pos_profile;

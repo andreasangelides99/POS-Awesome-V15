@@ -35,6 +35,7 @@ export {
 	clearOpeningStorage,
         getOpeningDialogStorage,
         setOpeningDialogStorage,
+	czMirrored,
         getTaxTemplate,
         setTaxTemplate,
         getPrintTemplate,

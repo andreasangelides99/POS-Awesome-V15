@@ -150,6 +150,7 @@ import format from "../../format";
 import {
 	getOpeningDialogStorage,
 	setOpeningDialogStorage,
+	czMirrored,
 	setOpeningStorage,
 	initPromise,
 	checkDbHealth,
@@ -303,7 +304,8 @@ export default {
 			await checkDbHealth();
 
 			// Load cached data first for offline usage
-			const cached = getOpeningDialogStorage();
+			// Cake Zone: a logout empties the till's cache; the offline copy survives it.
+			const cached = getOpeningDialogStorage() || (offlineTillOn() ? czMirrored("cz_offline_dialog") : null);
 			if (cached) {
 				try {
 					vm.companies = cached.companies.map((c) => c.name);
