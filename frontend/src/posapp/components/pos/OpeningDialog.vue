@@ -159,6 +159,7 @@ import {
 	openOffline,
 	rememberProfile,
 } from "../../../offline/index.js";
+import { cachePrintTemplateAndTerms } from "../../../utils/pos_profile.js";
 
 export default {
 	mixins: [format],
@@ -380,6 +381,8 @@ export default {
 				.then((r) => {
 					if (r.message) {
 						rememberProfile(r.message);
+						// Cake Zone (10 Nov 2026): save this till's receipt layout for offline use.
+						cachePrintTemplateAndTerms(r.message.pos_profile).catch(() => {});
 						vm.eventBus.emit("register_pos_data", r.message);
 						vm.eventBus.emit("set_company", r.message.company);
 						vm.eventBus.emit("cz_offer_enrol");

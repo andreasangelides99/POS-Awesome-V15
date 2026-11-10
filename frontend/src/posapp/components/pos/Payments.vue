@@ -855,7 +855,7 @@ import {
 } from "../../../offline/index.js";
 
 import renderOfflineInvoiceHTML from "../../../offline_print_template";
-import { silentPrint } from "../../plugins/print.js";
+import { silentPrint, silentPrintHtml } from "../../plugins/print.js";
 
 export default {
 	// Using format mixin for shared formatting methods
@@ -1709,7 +1709,13 @@ export default {
 		// Print invoice using a more detailed offline template
 		async print_offline_invoice(invoice) {
 			if (!invoice) return;
-			const html = await renderOfflineInvoiceHTML(invoice);
+			const html = await renderOfflineInvoiceHTML(invoice, {
+				taxes_and_charges: invoice.taxes_and_charges || (this.pos_profile && this.pos_profile.taxes_and_charges),
+			});
+			if (this.pos_profile && this.pos_profile.posa_silent_print) {
+				silentPrintHtml(html);
+				return;
+			}
 			const win = window.open("", "_blank");
 			win.document.write(html);
 			win.document.close();
