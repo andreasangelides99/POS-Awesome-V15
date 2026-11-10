@@ -37,7 +37,9 @@ self.addEventListener("install", (event) => {
 				resources.map(async (url) => {
 					try {
 						const resp = await fetch(url, { cache: "reload" });
-						if (resp && resp.ok) {
+						// Never keep a redirect: a worker installed while logged out stored the
+						// LOGIN redirect as the till page, and offline Chrome refused it (ERR_FAILED).
+						if (resp && resp.ok && !resp.redirected) {
 							await cache.put(url, resp.clone());
 						}
 					} catch (err) {
