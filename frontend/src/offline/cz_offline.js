@@ -232,6 +232,60 @@ export function clearActor() {
 	sessionStorage.removeItem(ACTOR);
 }
 
+// ---- a logout that could not reach ERP (owner's test, 11 Nov 2026) ---------------------------
+// Logout ends the ERP session, and with the internet down that request never arrives. The till
+// then went to /login, which offline is the till's saved page again - still logged in as the
+// same person. Instead the till remembers the logout is owed, shows its own sign-in screen, and
+// ends that session as soon as ERP can be reached, before anything else is asked of it.
+const LOGOUT_DUE = "cz_offline_logout_due";
+
+export function logoutDue() {
+	try {
+		return localStorage.getItem(LOGOUT_DUE) || null;
+	} catch (e) {
+		return null;
+	}
+}
+
+export function markLogoutDue(user) {
+	if (!user || user === "Guest") return;
+	try {
+		localStorage.setItem(LOGOUT_DUE, user);
+	} catch (e) {
+		/* nothing to keep it in */
+	}
+}
+
+// true once the owed logout is done (or nothing is owed); false while ERP cannot be reached.
+export async function finishLogout() {
+	const due = logoutDue();
+	if (!due) return true;
+	const done = () => {
+		localStorage.removeItem(LOGOUT_DUE);
+		return true;
+	};
+	try {
+		// The unique query keeps an older service worker (which answered from its cache) out of it.
+		const res = await fetch("/api/method/frappe.auth.get_logged_user?_=" + Date.now(), {
+			cache: "no-store",
+			credentials: "same-origin",
+			headers: { Accept: "application/json" },
+		});
+		if (res.status === 401 || res.status === 403) return done(); // no session left
+		if (!res.ok) return false;
+		const who = (await res.json()).message;
+		// Someone has logged in properly since: their session is not the one owed.
+		if (who !== due) return done();
+		const out = await fetch("/api/method/logout?_=" + Date.now(), {
+			cache: "no-store",
+			credentials: "same-origin",
+		});
+		return out.ok ? done() : false;
+	} catch (e) {
+		return false;
+	}
+}
+
 // ---- the till's profile, kept so a shift can open with no server ---------------------------
 
 export function rememberProfile(data) {

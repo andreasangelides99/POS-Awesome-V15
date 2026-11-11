@@ -3,7 +3,9 @@
 // the install list below changes under the SAME url.
 // v3 (10 Nov 2026, offline till): the till's page is now refreshed on every online visit (see
 // the navigate handler), so this bump also replaces every till's install-time copy once.
-const CACHE_NAME = "posawesome-cache-v3";
+// v4 (11 Nov 2026): who-is-logged-in and logout are never answered from the cache (below); the
+// bump throws away the copies of them every till had kept, which said "still logged in" for ever.
+const CACHE_NAME = "posawesome-cache-v4";
 const MAX_CACHE_ITEMS = 1000;
 
 async function enforceCacheLimit(cache) {
@@ -71,6 +73,10 @@ self.addEventListener("fetch", (event) => {
 	if (url.protocol !== "http:" && url.protocol !== "https:") return;
 
 	if (event.request.url.includes("socket.io")) return;
+
+	// Login state must come from ERP itself. A kept copy of get_logged_user said the old person was
+	// still logged in, and a kept copy of logout "logged out" without ever reaching ERP.
+	if (url.pathname === "/api/method/logout" || url.pathname.startsWith("/api/method/frappe.auth.")) return;
 
 	if (event.request.mode === "navigate") {
 		event.respondWith(

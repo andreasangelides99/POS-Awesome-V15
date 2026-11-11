@@ -70,6 +70,7 @@ import {
 	canReachServer,
 	actor,
 	clearActor,
+	markLogoutDue,
 	pendingOpeningCount,
 	pendingClosingCount,
 } from "../offline/index.js";
@@ -452,25 +453,41 @@ export default {
 			// have not synced yet, and wiping them on the way out would throw away sales
 			// taken during a signal outage - the one thing offline capture exists to
 			// protect. They survive the logout and sync on the next sign-in.
-			if (offlineTillOn() && actor()) {
-				// Signed in on the till's own screen: there is no server session to end.
-				clearActor();
+			const leave = () => window.location.replace("/login");
+			// Cake Zone offline till: with no internet, /login is the till's saved page again,
+			// still logged in as the same person (owner's test, 11 Nov 2026). Go to the till's
+			// own sign-in screen instead and end the ERP session once the internet is back.
+			const czStranded = (user) => {
+				markLogoutDue(user);
+				window.location.replace("/app/posapp");
+			};
+			let czUser = null;
+			if (offlineTillOn()) {
+				if (actor()) {
+					// Signed in on the till's own screen: that sign-in is all there is to end.
+					clearActor();
+				} else {
+					czUser = frappe.session && frappe.session.user;
+				}
 				if (!canReachServer()) {
+					if (czUser) return czStranded(czUser);
 					window.location.reload();
 					return;
 				}
 			}
-			const leave = () => window.location.replace("/login");
+			const failed = (xhr) => {
+				// The request never arrived (the internet went as Logout was pressed).
+				if (czUser && (!navigator.onLine || !xhr || !xhr.status)) return czStranded(czUser);
+				leave();
+			};
 			let r;
 			try {
 				r = frappe.call("logout");
 			} catch (e) {
 				console.error("Logout request failed", e);
-				return leave();
+				return failed(null);
 			}
-			if (r && typeof r.always === "function") r.always(leave);
-			else if (r && typeof r.finally === "function") r.finally(leave);
-			else if (r && typeof r.then === "function") r.then(leave, leave);
+			if (r && typeof r.then === "function") r.then(leave, failed);
 			else leave();
 		},
 
