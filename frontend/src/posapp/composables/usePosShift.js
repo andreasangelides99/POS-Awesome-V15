@@ -10,6 +10,8 @@ import {
     rememberProfile,
     clearActor,
     actor,
+    logoutDue,
+    finishLogout,
     checkPeople,
     pendingOpeningCount,
     syncOfflineOpenings,
@@ -39,6 +41,19 @@ export function usePosShift(openDialog) {
     async function check_opening_entry(czRetried = false) {
         await initPromise;
         await checkDbHealth();
+        if (offlineTillOn() && logoutDue()) {
+            // A logout made with the internet down: end that ERP session before asking ERP
+            // anything, or the till would carry on as the person who logged out.
+            const ended = await finishLogout();
+            if (!actor()) {
+                if (ended) {
+                    window.location.replace("/login?redirect-to=" + encodeURIComponent("/app/posapp"));
+                    return;
+                }
+                eventBus?.emit("cz_offline_start");
+                return;
+            }
+        }
         return frappe
             .call("posawesome.posawesome.api.shifts.check_opening_shift", {
                 user: frappe.session.user,
@@ -167,12 +182,13 @@ export function usePosShift(openDialog) {
                     // calls are not even tried). Ask ERP directly: a real login ends the offline one.
                     if (!czRetried && actor() && navigator.onLine) {
                         try {
-                            const res = await fetch("/api/method/frappe.auth.get_logged_user", {
+                            const res = await fetch("/api/method/frappe.auth.get_logged_user?_=" + Date.now(), {
+                                cache: "no-store",
                                 credentials: "same-origin",
                                 headers: { Accept: "application/json" },
                             });
                             const who = res.ok ? (await res.json()).message : null;
-                            if (who && who !== "Guest") {
+                            if (who && who !== "Guest" && who !== logoutDue()) {
                                 clearActor();
                                 return check_opening_entry(true);
                             }

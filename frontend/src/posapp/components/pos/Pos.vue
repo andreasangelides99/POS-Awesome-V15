@@ -68,6 +68,7 @@ import {
 	actor,
 	applyActor,
 	clearActor,
+	finishLogout,
 	afterSignIn,
 } from "../../../offline/index.js";
 import {
@@ -180,7 +181,10 @@ export default {
 			// Nothing is left on the PC to send (the dialog only shows then). The shift stays
 			// open in ERP and carries on after the login.
 			clearActor();
-			window.location.replace("/login?redirect-to=" + encodeURIComponent("/app/posapp"));
+			// A logout owed from the outage goes first, or /login would wave the old session through.
+			finishLogout().finally(() =>
+				window.location.replace("/login?redirect-to=" + encodeURIComponent("/app/posapp")),
+			);
 		},
 		checkLoadingComplete() {
 			if (this.itemsLoaded && this.customersLoaded) {
