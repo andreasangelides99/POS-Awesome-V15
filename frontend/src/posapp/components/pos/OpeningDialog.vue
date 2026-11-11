@@ -128,6 +128,16 @@
 					</v-btn>
 					<v-spacer />
 					<v-btn
+						v-if="czCanEnrol()"
+						variant="text"
+						color="primary"
+						@click="czEnrolNow"
+						class="mr-2"
+					>
+						<v-icon start>mdi-account-key-outline</v-icon>
+						<span>{{ __("Set up offline sign-in") }}</span>
+					</v-btn>
+					<v-btn
 						theme="dark"
 						:disabled="is_loading"
 						:loading="is_loading"
@@ -244,6 +254,13 @@ export default {
 	},
 
 	methods: {
+		// Cake Zone (10 Nov 2026): set up offline sign-in here, without opening a shift.
+		czCanEnrol() {
+			return offlineTillOn() && !actor() && navigator.onLine && window.serverOnline !== false;
+		},
+		czEnrolNow() {
+			window.dispatchEvent(new CustomEvent("cz_enrol_now"));
+		},
 		// Cake Zone: a PC set up at /till-setup opens its own till and no other, so
 		// "Till 1" stays the same drawer and card machine every day (the owner,
 		// 16 Oct 2026). The browser holds the device id; the server's answer wins

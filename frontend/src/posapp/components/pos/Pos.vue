@@ -201,6 +201,21 @@ export default {
 				else this.czSignIn = true;
 			});
 			this.eventBus.on("cz_offer_enrol", () => this.czOfferEnrol());
+			// "Set up offline sign-in" from the Menu or the opening window (owner, 10 Nov 2026):
+			// so a supervisor can have every staff member set up, without opening shifts.
+			this.czEnrolNow = () => {
+				if (!offlineTillOn() || actor()) return;
+				if (!boundTill()) {
+					this.eventBus.emit("show_message", {
+						title: __("This PC is not set up as a till yet. Set it up at /till-setup, in this browser."),
+						color: "error",
+					});
+					return;
+				}
+				this.czEnrolAsked = true;
+				this.czEnrol = true;
+			};
+			window.addEventListener("cz_enrol_now", this.czEnrolNow);
 			// Asked once; "Not now" waits until the next reload, and selling carries on offline
 			// meanwhile (those sales go with the seller's key, as before).
 			this.eventBus.on("cz_back_online", () => {
@@ -254,6 +269,7 @@ export default {
 		});
 	},
 	beforeUnmount() {
+		if (this.czEnrolNow) window.removeEventListener("cz_enrol_now", this.czEnrolNow);
 		this.eventBus.off("close_opening_dialog");
 		this.eventBus.off("cz_offline_start");
 		this.eventBus.off("cz_offer_enrol");

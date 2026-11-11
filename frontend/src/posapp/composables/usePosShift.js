@@ -10,6 +10,7 @@ import {
     rememberProfile,
     clearActor,
     actor,
+    checkPeople,
     pendingOpeningCount,
     syncOfflineOpenings,
     isOffline,
@@ -48,7 +49,8 @@ export function usePosShift(openDialog) {
                     // this till's profile is kept for the next outage.
                     clearActor();
                     rememberProfile(r.message);
-                    eventBus?.emit("cz_offer_enrol");
+                    // Leavers off, changed passwords flagged - then offer set-up if needed.
+                    checkPeople().finally(() => eventBus?.emit("cz_offer_enrol"));
                 }
                 if (r.message) {
                     // Cake Zone (10 Nov 2026): save THIS till's receipt layout for offline use
@@ -130,6 +132,7 @@ export function usePosShift(openDialog) {
                     }
                     window.cz_stale_shift = null;
                     window.cz_shift_block = null;
+                    if (offlineTillOn()) checkPeople().catch(() => {});
                     // Cake Zone: the server says no shift is open for this person (closed
                     // elsewhere, or never), so the offline copy must not resume one.
                     try {
