@@ -79,24 +79,44 @@ self.addEventListener("fetch", (event) => {
 	if (url.pathname === "/api/method/logout" || url.pathname.startsWith("/api/method/frappe.auth.")) return;
 
 	if (event.request.mode === "navigate") {
+		// The till's page, when the PC's network is up but the internet is not (owner's test, 11 Nov
+		// 2026 evening): the request neither arrives nor fails, so the till waited on it, and Logout
+		// "reloaded" as the same person. After 5 seconds the kept copy is used; the request carries
+		// on and refreshes the copy if it ever answers.
+		const tillPage = new URL(event.request.url).pathname.startsWith("/app/posapp");
+		const network = fetch(event.request).then(async (resp) => {
+			try {
+				if (resp && resp.ok && !resp.redirected && tillPage) {
+					const cache = await caches.open(CACHE_NAME);
+					await cache.put("/app/posapp", resp.clone());
+				}
+			} catch (e) {
+				console.warn("SW could not refresh the till page", e);
+			}
+			return resp;
+		});
+		network.catch(() => {});
+		if (tillPage) {
+			event.waitUntil(network.catch(() => null));
+		}
 		event.respondWith(
 			(async () => {
-                                try {
-                                        const resp = await fetch(event.request);
-                                        // Keep the till's page current. Until 10 Nov 2026 the copy used
-                                        // offline was the one fetched when this worker INSTALLED, so it
-                                        // carried that day's program versions and settings for ever: a
-                                        // till reloaded offline weeks later could ask for files it no
-                                        // longer had. A redirect (to /login) is never stored.
-                                        try {
-                                                const path = new URL(event.request.url).pathname;
-                                                if (resp && resp.ok && !resp.redirected && path.startsWith("/app/posapp")) {
-                                                        const cache = await caches.open(CACHE_NAME);
-                                                        await cache.put("/app/posapp", resp.clone());
-                                                }
-                                        } catch (e) {
-                                                console.warn("SW could not refresh the till page", e);
+                                if (tillPage) {
+                                        const kept = await caches.match("/app/posapp");
+                                        if (kept) {
+                                                const first = await Promise.race([
+                                                        network.catch(() => null),
+                                                        new Promise((resolve) => setTimeout(() => resolve(null), 5000)),
+                                                ]);
+                                                return first || kept;
                                         }
+                                }
+                                try {
+                                        const resp = await network;
+                                        // Keep the till's page current (done in `network` above). Until 10
+                                        // Nov 2026 the copy used offline was the one fetched when this worker
+                                        // INSTALLED, so it carried that day's program versions for ever. A
+                                        // redirect (to /login) is never stored.
                                         return resp;
                                 } catch (err) {
                                         const cached = await caches.match(event.request, { ignoreSearch: true });

@@ -264,12 +264,17 @@ export async function finishLogout() {
 		localStorage.removeItem(LOGOUT_DUE);
 		return true;
 	};
+	// With the network up but no internet a request hangs rather than fails: give up after 5
+	// seconds, so the till shows its own sign-in instead of waiting (owner's test, 11 Nov evening).
+	const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
+	const timer = ctl ? setTimeout(() => ctl.abort(), 5000) : null;
 	try {
 		// The unique query keeps an older service worker (which answered from its cache) out of it.
 		const res = await fetch("/api/method/frappe.auth.get_logged_user?_=" + Date.now(), {
 			cache: "no-store",
 			credentials: "same-origin",
 			headers: { Accept: "application/json" },
+			signal: ctl ? ctl.signal : undefined,
 		});
 		if (res.status === 401 || res.status === 403) return done(); // no session left
 		if (!res.ok) return false;
@@ -279,10 +284,13 @@ export async function finishLogout() {
 		const out = await fetch("/api/method/logout?_=" + Date.now(), {
 			cache: "no-store",
 			credentials: "same-origin",
+			signal: ctl ? ctl.signal : undefined,
 		});
 		return out.ok ? done() : false;
 	} catch (e) {
 		return false;
+	} finally {
+		if (timer) clearTimeout(timer);
 	}
 }
 

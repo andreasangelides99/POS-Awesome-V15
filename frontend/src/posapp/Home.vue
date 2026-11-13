@@ -464,22 +464,38 @@ export default {
 			let czUser = null;
 			if (offlineTillOn()) {
 				if (actor()) {
-					// Signed in on the till's own screen: that sign-in is all there is to end.
+					// Signed in on the till's own screen: that sign-in is all there is to end, and
+					// ERP holds no session for it. So nothing is sent and nothing reloads: the till's
+					// sign-in screen comes up at once. With the PC's network still up but no internet
+					// (owner's test, 11 Nov 2026 evening) a reload waited on ERP and came back as the
+					// last person who had loaded the page.
 					clearActor();
-				} else {
-					czUser = frappe.session && frappe.session.user;
-				}
-				if (!canReachServer()) {
-					if (czUser) return czStranded(czUser);
+					if (this.eventBus) {
+						this.eventBus.emit("cz_offline_start");
+						return;
+					}
 					window.location.reload();
 					return;
 				}
+				czUser = frappe.session && frappe.session.user;
+				if (!canReachServer()) return czStranded(czUser);
 			}
-			const failed = (xhr) => {
+			let done = false;
+			const once = (fn) => (arg) => {
+				if (done) return;
+				done = true;
+				fn(arg);
+			};
+			const failed = once((xhr) => {
 				// The request never arrived (the internet went as Logout was pressed).
 				if (czUser && (!navigator.onLine || !xhr || !xhr.status)) return czStranded(czUser);
 				leave();
-			};
+			});
+			const ok = once(leave);
+			// No internet behind a working network: the request neither arrives nor fails, it hangs.
+			// After 6 seconds with no answer, treat it as not sent - the logout is owed and ends the
+			// ERP session once the internet is back.
+			if (czUser) setTimeout(() => failed(null), 6000);
 			let r;
 			try {
 				r = frappe.call("logout");
@@ -487,8 +503,8 @@ export default {
 				console.error("Logout request failed", e);
 				return failed(null);
 			}
-			if (r && typeof r.then === "function") r.then(leave, failed);
-			else leave();
+			if (r && typeof r.then === "function") r.then(ok, failed);
+			else ok();
 		},
 
 		handleRefreshCacheUsage() {
