@@ -158,8 +158,17 @@ export function usePosShift(openDialog) {
                     } catch (e) {
                         /* ignore */
                     }
+                    // Cake Zone, 12 Nov 2026: ERP ANSWERED and says this person has no open
+                    // shift, so the till's saved copy must not be resumed. POS Awesome fell back
+                    // to it here, and that is how CBD Till 1 sold on Felicia's shift after it had
+                    // been closed from another PC (11 Nov: two sales on no Z), and why the next
+                    // morning the PC could only offer to close that dead shift ("POS Closing
+                    // Shift already exists against felicia") and never to open a new one.
+                    // The one copy worth keeping is a shift opened OFFLINE (OFF- id) that has not
+                    // reached ERP yet - its sync was tried just above and failed.
                     const data = getOpeningStorage();
-                    if (data) {
+                    const shiftName = data && data.pos_opening_shift && data.pos_opening_shift.name;
+                    if (data && String(shiftName || "").startsWith("OFF-")) {
                         pos_profile.value = data.pos_profile;
                         pos_opening_shift.value = data.pos_opening_shift;
                         eventBus?.emit("register_pos_profile", data);
@@ -169,8 +178,12 @@ export function usePosShift(openDialog) {
                         } catch (e) {
                             console.warn("Realtime emit failed", e);
                         }
-                        console.info("LoadPosProfile (cached)");
+                        console.info("LoadPosProfile (cached offline opening)");
                         return;
+                    }
+                    if (data) {
+                        console.info("Dropped the saved shift " + shiftName + ": ERP has no open shift for this person");
+                        clearOpeningStorage();
                     }
                     openDialog && openDialog();
                 }
