@@ -84,6 +84,8 @@ self.addEventListener("fetch", (event) => {
 		// "reloaded" as the same person. After 5 seconds the kept copy is used; the request carries
 		// on and refreshes the copy if it ever answers.
 		const tillPage = new URL(event.request.url).pathname.startsWith("/app/posapp");
+		// ?cz_fresh=: the page asked for the network on purpose (see markKept), so no race.
+		const freshAsked = new URL(event.request.url).searchParams.has("cz_fresh");
 		const network = fetch(event.request).then(async (resp) => {
 			try {
 				if (resp && resp.ok && !resp.redirected && tillPage) {
@@ -101,14 +103,14 @@ self.addEventListener("fetch", (event) => {
 		}
 		event.respondWith(
 			(async () => {
-                                if (tillPage) {
+                                if (tillPage && !freshAsked) {
                                         const kept = await caches.match("/app/posapp");
                                         if (kept) {
                                                 const first = await Promise.race([
                                                         network.catch(() => null),
                                                         new Promise((resolve) => setTimeout(() => resolve(null), 5000)),
                                                 ]);
-                                                return first || kept;
+                                                return first || (await markKept(kept));
                                         }
                                 }
                                 try {
@@ -126,7 +128,7 @@ self.addEventListener("fetch", (event) => {
 
                                         const appShell = await caches.match("/app/posapp");
                                         if (appShell) {
-                                                return appShell;
+                                                return await markKept(appShell);
                                         }
 
                                         const offlinePage = await caches.match("/offline.html");
@@ -171,3 +173,17 @@ self.addEventListener("fetch", (event) => {
 		})(),
 	);
 });
+
+// THE KEPT COPY CARRIES THE SECURITY TOKEN OF THE SESSION THAT SAVED IT (found 13 Nov 2026 on the
+// test copy). Served in place of a slow network - e.g. straight after a login - every save the till
+// then made was refused "Invalid Request", because the token was the previous login's. So a kept
+// copy is marked, and the till reloads itself from ERP as soon as ERP answers (usePosShift.js).
+async function markKept(resp) {
+	try {
+		const html = await resp.clone().text();
+		const marked = html.replace("<head>", "<head><script>window.czKeptPage=1</script>");
+		return new Response(marked, { status: resp.status, statusText: resp.statusText, headers: resp.headers });
+	} catch (e) {
+		return resp;
+	}
+}

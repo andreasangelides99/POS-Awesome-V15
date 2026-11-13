@@ -239,18 +239,30 @@ export function clearActor() {
 // ends that session as soon as ERP can be reached, before anything else is asked of it.
 const LOGOUT_DUE = "cz_offline_logout_due";
 
-export function logoutDue() {
+// The owed logout is {user, token}: WHICH session, not just whose. Before 13 Nov it was the user
+// alone, so a logout owed from yesterday logged that person out again the next time they signed
+// in properly - a new session, nothing to do with the one owed (found on the test copy).
+function dueRecord() {
 	try {
-		return localStorage.getItem(LOGOUT_DUE) || null;
+		const raw = localStorage.getItem(LOGOUT_DUE);
+		if (!raw) return null;
+		if (raw.charAt(0) !== "{") return { user: raw, token: null }; // written by an older till
+		return JSON.parse(raw);
 	} catch (e) {
 		return null;
 	}
 }
 
+export function logoutDue() {
+	const due = dueRecord();
+	return (due && due.user) || null;
+}
+
 export function markLogoutDue(user) {
 	if (!user || user === "Guest") return;
 	try {
-		localStorage.setItem(LOGOUT_DUE, user);
+		const token = (typeof frappe !== "undefined" && frappe.csrf_token) || null;
+		localStorage.setItem(LOGOUT_DUE, JSON.stringify({ user, token }));
 	} catch (e) {
 		/* nothing to keep it in */
 	}
@@ -258,12 +270,17 @@ export function markLogoutDue(user) {
 
 // true once the owed logout is done (or nothing is owed); false while ERP cannot be reached.
 export async function finishLogout() {
-	const due = logoutDue();
+	const rec = dueRecord();
+	const due = rec && rec.user;
 	if (!due) return true;
 	const done = () => {
 		localStorage.removeItem(LOGOUT_DUE);
 		return true;
 	};
+	// A page with a DIFFERENT token belongs to a newer session (a proper login since): the owed one
+	// is already over. The page's token is only trusted when the page came from ERP, not the copy.
+	const token = typeof frappe !== "undefined" ? frappe.csrf_token : null;
+	if (rec.token && token && !window.czKeptPage && token !== rec.token) return done();
 	// With the network up but no internet a request hangs rather than fails: give up after 5
 	// seconds, so the till shows its own sign-in instead of waiting (owner's test, 11 Nov evening).
 	const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;

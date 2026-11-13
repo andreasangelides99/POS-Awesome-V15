@@ -38,9 +38,48 @@ export function usePosShift(openDialog) {
         return !navigator.onLine || window.serverOnline === false || !err || err.status === 0;
     }
 
+    // A HEAD the service worker does not answer from its cache; false after 3 s of silence or a 5xx.
+    async function serverAnswers() {
+        const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
+        const timer = ctl ? setTimeout(() => ctl.abort(), 3000) : null;
+        try {
+            const res = await fetch("/api/method/ping?_=" + Date.now(), {
+                method: "HEAD", cache: "no-store", credentials: "same-origin",
+                signal: ctl ? ctl.signal : undefined,
+            });
+            // ERP refuses a HEAD on ping (403), and that refusal IS an answer: it is there.
+            // A 5xx is the web server answering for an ERP that is not.
+            return res.status > 0 && res.status < 500;
+        } catch (e) {
+            return false;
+        } finally {
+            if (timer) clearTimeout(timer);
+        }
+    }
+
     async function check_opening_entry(czRetried = false) {
         await initPromise;
         await checkDbHealth();
+        // Cake Zone, 13 Nov 2026: this page is the copy kept on the PC (sw.js markKept), served
+        // because ERP was slow or away. It carries an older login's security token, so if ERP is
+        // in fact reachable, fetch the real page now - before anything is saved and refused.
+        // At most once a minute: on a line slow enough to hand back the kept copy again, the
+        // till must settle on it rather than reload in a loop.
+        let lastFresh = 0;
+        try {
+            lastFresh = Number(sessionStorage.getItem("cz_fresh_at") || 0);
+        } catch (e) {
+            lastFresh = 0;
+        }
+        if (window.czKeptPage && !czRetried && Date.now() - lastFresh > 60000 && (await serverAnswers())) {
+            try {
+                sessionStorage.setItem("cz_fresh_at", String(Date.now()));
+            } catch (e) {
+                /* without it, still at most one reload per page */
+            }
+            window.location.replace("/app/posapp?cz_fresh=" + Date.now());
+            return;
+        }
         if (offlineTillOn() && logoutDue()) {
             // A logout made with the internet down: end that ERP session before asking ERP
             // anything, or the till would carry on as the person who logged out.
