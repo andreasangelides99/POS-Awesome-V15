@@ -160,6 +160,37 @@
 				</v-card-actions>
 			</v-card>
 		</v-dialog>
+		<!-- Cake Zone, 14 Nov 2026 (owner): a cash-up cannot be reopened once submitted. Every
+		     close asks for a final check during a branch's first 14 days on ERP
+		     (POS Profile.custom_cashup_warn_until), and afterwards whenever cash is R0.00. -->
+		<v-dialog v-model="checkDialog" max-width="560px" persistent>
+			<v-card class="pa-2">
+				<v-card-title class="text-h6">{{ __("Check before you submit") }}</v-card-title>
+				<v-card-text>
+					<p v-if="cashIsZero" class="text-error font-weight-bold mb-3">
+						{{ __("Cash is {0}. Is that right?", [fmt(0)]) }}
+					</p>
+					<p class="mb-2">
+						<strong>{{ __("Once you submit, you cannot come back to this screen.") }}</strong>
+						{{ __("Before submitting, make sure everything is entered correctly:") }}
+					</p>
+					<ul class="ml-6" style="list-style: disc">
+						<li>{{ __("notes and coins (cash)") }}</li>
+						<li>{{ __("the cards total") }}</li>
+						<li>{{ __("the total for every other payment method") }}</li>
+					</ul>
+				</v-card-text>
+				<v-card-actions>
+					<v-btn color="primary" variant="flat" size="large" @click="checkDialog = false">
+						{{ __("Go back and check") }}
+					</v-btn>
+					<v-spacer></v-spacer>
+					<v-btn variant="outlined" size="large" @click="confirm_submit">
+						{{ cashIsZero ? __("Submit with {0} cash", [fmt(0)]) : __("Submit") }}
+					</v-btn>
+				</v-card-actions>
+			</v-card>
+		</v-dialog>
 	</v-row>
 </template>
 
@@ -169,6 +200,7 @@ export default {
 	mixins: [format],
 	data: () => ({
 		closingDialog: false,
+		checkDialog: false,
 			staleSince: null,
 		itemsPerPage: 20,
 		dialog_data: {},
@@ -242,6 +274,14 @@ export default {
 				alert(this.__("Invalid closing amount"));
 				return;
 			}
+			if (this.cashIsZero || this.inFirstWeeks) {
+				this.checkDialog = true;
+				return;
+			}
+			this.confirm_submit();
+		},
+		confirm_submit() {
+			this.checkDialog = false;
 			this.eventBus.emit("submit_closing_pos", this.dialog_data);
 			this.closingDialog = false;
 		},
@@ -268,6 +308,23 @@ export default {
 		cashToBank() {
 			return Math.max(0, this.cashCounted - this.floatKept);
 		},
+		/* The cash declared: the Cash row(s) of the reconciliation, which the pad above
+		   writes into (applyCount) or the person typed. */
+		cashIsZero() {
+			const rows = (this.dialog_data.payment_reconciliation || []).filter((r) =>
+				String(r.mode_of_payment || "").toLowerCase().includes("cash"));
+			if (!rows.length) return false;
+			return rows.reduce((t, r) => t + (parseFloat(r.closing_amount) || 0), 0) === 0;
+		},
+		/* The branch's first 14 days: the date is set on the till by cross_branch.py
+		   (crossover count date + 14). The PC's own date, so it works offline too. */
+		inFirstWeeks() {
+			const until = this.pos_profile?.custom_cashup_warn_until;
+			if (!until) return false;
+			const d = new Date();
+			const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+			return today <= String(until).slice(0, 10);
+		},
 		isDarkTheme() {
 			return this.$theme.current === "dark";
 		},
@@ -289,6 +346,7 @@ export default {
 				d.count = null;
 			});
 			this.staleSince = window.cz_stale_shift || null;
+			this.checkDialog = false;
 			this.closingDialog = true;
 			this.dialog_data = data;
 		});
