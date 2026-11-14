@@ -67,6 +67,11 @@ export function saveOfflineInvoice(entry) {
 		entry.invoice.posting_date = frappe.datetime.nowdate();
 		entry.invoice.posting_time = frappe.datetime.now_time();
 	}
+	// Cake Zone, 14 Nov 2026: the sale's own id, so ERP records it once however many times
+	// it is sent (Nkomo Till 1: two tabs synced the same queue and 26 sales went in twice).
+	if (!entry.invoice.custom_offline_id) {
+		entry.invoice.custom_offline_id = newOfflineSaleId();
+	}
 
 	const key = "offline_invoices";
 	const entries = memory.offline_invoices;
@@ -259,7 +264,33 @@ export function clearOfflineCustomers() {
 }
 
 // Add sync function to clear local cache when invoices are successfully synced
+function newOfflineSaleId() {
+	try {
+		if (window.crypto && window.crypto.randomUUID) return "OS-" + window.crypto.randomUUID();
+	} catch (e) {
+		/* fall through */
+	}
+	return "OS-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 12) +
+		Math.random().toString(36).slice(2, 12);
+}
+
+// Cake Zone, 14 Nov 2026: ONE sync per PC, not per tab. invoiceSyncInProgress below only
+// stops a second sync in the same tab; every tab of the till shares the same saved queue,
+// so two tabs each sent all of it. The browser's lock is shared by every tab of the site.
 export async function syncOfflineInvoices() {
+	if (typeof navigator !== "undefined" && navigator.locks && navigator.locks.request) {
+		const ran = await navigator.locks.request(
+			"cz-offline-invoice-sync",
+			{ ifAvailable: true },
+			async (lock) => (lock ? { result: await syncOfflineInvoicesOnce() } : null),
+		);
+		if (ran) return ran.result;
+		return { pending: getPendingOfflineInvoiceCount(), synced: 0, drafted: 0 };
+	}
+	return syncOfflineInvoicesOnce();
+}
+
+async function syncOfflineInvoicesOnce() {
 	// Prevent concurrent syncs which can lead to duplicate submissions
 	if (invoiceSyncInProgress) {
 		return { pending: getPendingOfflineInvoiceCount(), synced: 0, drafted: 0 };

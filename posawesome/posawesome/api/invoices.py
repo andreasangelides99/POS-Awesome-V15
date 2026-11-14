@@ -571,6 +571,21 @@ def submit_invoice(invoice, data):
         doctype = "POS Invoice"
 
     invoice_name = invoice.get("name")
+    # Cake Zone, 14 Nov 2026: an offline sale carries the till's own id. Nkomo Till 1 had the
+    # till open in two tabs; both synced the same queue at 11:34 and 26 sales (R3,134) were
+    # recorded twice. A sale already recorded is answered with what ERP already has; a draft
+    # left by an earlier attempt is finished rather than a second one made. The column is
+    # UNIQUE, so two tabs racing on the same sale cannot both insert it.
+    offline_id = invoice.get("custom_offline_id")
+    if offline_id and frappe.db.has_column(doctype, "custom_offline_id"):
+        seen = frappe.db.get_value(doctype, {"custom_offline_id": offline_id},
+                                   ["name", "docstatus"], as_dict=True)
+        # Submitted, or cancelled on purpose since: either way never record it again.
+        if seen and seen.docstatus in (1, 2):
+            return {"name": seen.name, "status": seen.docstatus, "cz_already_recorded": 1}
+        if seen:
+            invoice_name = seen.name
+            invoice.pop("name", None)
     if not invoice_name or not frappe.db.exists(doctype, invoice_name):
         created = update_invoice(json.dumps(invoice))
         invoice_name = created.get("name")
