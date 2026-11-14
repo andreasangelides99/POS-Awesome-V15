@@ -414,7 +414,13 @@ export default {
 
 		// Prepare taxes array
 		doc.taxes = [];
-		if (this.invoice_doc && this.invoice_doc.taxes) {
+		// Cake Zone, 14 Nov 2026: OFFLINE the taxes are always worked out afresh from the
+		// template. invoice_doc.taxes holds the tax ERP calculated for the LAST cart it saw, and
+		// this branch added that amount on top of the new subtotal: Jabulani Till 1 showed a R120
+		// Ferrero as R154 to pay (R120 + R34.44, the VAT of an unfinished R264 sale just before
+		// the line dropped), and the shop went to paper. Online the server recalculates, so
+		// reusing it there is harmless.
+		if (!isOffline() && this.invoice_doc && this.invoice_doc.taxes) {
 			let totalTax = 0;
 			this.invoice_doc.taxes.forEach((tax) => {
 				if (tax.tax_amount) {
@@ -437,7 +443,10 @@ export default {
 		} else if (isOffline()) {
 			const tmpl = getTaxTemplate(this.pos_profile.taxes_and_charges);
 			if (tmpl && Array.isArray(tmpl.taxes)) {
-				const inclusive = getTaxInclusiveSetting();
+				// Our prices include VAT: trust the template row as well as the cached flag, so a
+				// till that never cached the flag does not add 15% on top.
+				const inclusive =
+					getTaxInclusiveSetting() || tmpl.taxes.some((r) => !!Number(r.included_in_print_rate));
 				let runningTotal = grandTotal;
 				let totalTax = 0;
 				tmpl.taxes.forEach((row) => {
@@ -445,7 +454,8 @@ export default {
 					if (row.charge_type === "Actual") {
 						tax_amount = flt(row.tax_amount || 0);
 					} else if (inclusive) {
-						tax_amount = flt((doc.total * flt(row.rate)) / 100);
+						// VAT already inside the price: R120 holds 120 x 15/115 = R15.65, not R18.
+						tax_amount = flt((doc.total * flt(row.rate)) / (100 + flt(row.rate)));
 					} else {
 						tax_amount = flt((doc.net_total * flt(row.rate)) / 100);
 					}
