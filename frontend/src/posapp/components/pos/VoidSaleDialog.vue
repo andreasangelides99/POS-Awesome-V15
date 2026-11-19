@@ -68,7 +68,7 @@ export default {
 			return this.items.reduce((s, i) => s + (Number(i.rate) || 0) * (Number(i.qty) || 0), 0);
 		},
 		money() {
-			return this.currency(this.value);
+			return "R " + this.currency(this.value);
 		},
 		ready() {
 			if (!this.reason || !this.approver || !this.password) return false;
@@ -77,7 +77,14 @@ export default {
 			return true;
 		},
 	},
+	mounted() {
+		// Save this till's supervisors while the line is up, so a cancel can be approved offline.
+		if (this.till) approversFor(this.till);
+	},
 	watch: {
+		till(t) {
+			if (t) approversFor(t);
+		},
 		async modelValue(open) {
 			if (!open) return;
 			Object.assign(this, { reason: "", note: "", password: "", approver_reason: "", error: "", busy: false, me: currentUser() });

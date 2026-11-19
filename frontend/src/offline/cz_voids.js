@@ -33,30 +33,44 @@ export function newClientId() {
 	return "VOID-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
 }
 
-function serverCall(method, args) {
-	// resolves with the message; rejects with {network: true} when ERP cannot be reached
-	return new Promise((resolve, reject) => {
-		if (actor() || !navigator.onLine) return reject({ network: true });
-		frappe.call({
-			method,
-			args,
-			freeze: false,
-			callback: (r) => resolve(r.message),
-			error: (xhr) => {
-				const status = xhr && xhr.status;
-				if (!status) return reject({ network: true });
-				let msg = __("ERP refused it.");
-				try {
-					const body = xhr.responseJSON || JSON.parse(xhr.responseText || "{}");
-					const m = body._server_messages ? JSON.parse(JSON.parse(body._server_messages)[0]).message : body.message;
-					if (m) msg = frappe.utils.html2text ? frappe.utils.html2text(m) : m;
-				} catch (e) {
-					/* keep the plain message */
-				}
-				reject({ network: false, message: msg });
+// Straight to ERP, not frappe.call: on a refusal frappe.call pops its own message box, which opens
+// BEHIND the till's dialog (posawesome-ui-gating), and it hands the error callback no status, so a
+// refusal could not be told from a dropped line. Resolves with the message; rejects with
+// {network: true} when ERP cannot be reached, or {network: false, message} when ERP refused.
+async function serverCall(method, args) {
+	if (actor() || !navigator.onLine) throw { network: true };
+	let res;
+	try {
+		res = await fetch(`/api/method/${method}?_=${Date.now()}`, {
+			method: "POST",
+			credentials: "same-origin",
+			headers: {
+				"Content-Type": "application/json",
+				Accept: "application/json",
+				"X-Frappe-CSRF-Token": frappe.csrf_token,
 			},
+			body: JSON.stringify(args),
 		});
-	});
+	} catch (e) {
+		throw { network: true };
+	}
+	let body = {};
+	try {
+		body = await res.json();
+	} catch (e) {
+		body = {};
+	}
+	if (res.ok) return body.message;
+	if (res.status >= 500 && res.status !== 500) throw { network: true };     // a gateway in the way
+	let msg = __("ERP refused it.");
+	try {
+		const first = body._server_messages && JSON.parse(JSON.parse(body._server_messages)[0]);
+		if (first && first.message) msg = first.message.replace(/<[^>]*>/g, "");
+		else if (body.exception) msg = String(body.exception).split(":").slice(1).join(":").trim() || msg;
+	} catch (e) {
+		/* keep the plain message */
+	}
+	throw { network: false, status: res.status, message: msg };
 }
 
 // Supervisors and area managers for this till, saved for when the line is down.
