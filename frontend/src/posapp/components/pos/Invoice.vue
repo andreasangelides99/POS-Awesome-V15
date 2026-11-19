@@ -2,7 +2,15 @@
 	<!-- Main Invoice Wrapper -->
 	<div class="pa-0">
 		<!-- Cancel Sale Confirmation Dialog -->
-		<CancelSaleDialog v-model="cancel_dialog" @confirm="cancel_invoice" />
+		<!-- Cake Zone (19 Nov 2026): a cancel needs a supervisor and is recorded -->
+		<VoidSaleDialog
+			v-model="cancel_dialog"
+			:till="pos_profile && pos_profile.name"
+			:items="items"
+			:draft="invoice_doc && invoice_doc.name ? invoice_doc.name : ''"
+			:currency="(v) => formatCurrency(v)"
+			@confirm="cancel_invoice"
+		/>
 
 		<!-- Main Invoice Card (contains all invoice content) -->
 		<v-card
@@ -313,7 +321,7 @@
 			@save-and-clear="save_and_clear_invoice"
 			@load-drafts="get_draft_invoices"
 			@select-order="get_draft_orders"
-			@cancel-sale="cancel_dialog = true"
+			@cancel-sale="items.length ? (cancel_dialog = true) : cancel_invoice()"
 			@open-returns="open_returns"
 			@print-draft="print_draft_invoice"
 			@show-payment="show_payment"
@@ -328,7 +336,7 @@ import Customer from "./Customer.vue";
 import DeliveryCharges from "./DeliveryCharges.vue";
 import PostingDateRow from "./PostingDateRow.vue";
 import MultiCurrencyRow from "./MultiCurrencyRow.vue";
-import CancelSaleDialog from "./CancelSaleDialog.vue";
+import VoidSaleDialog from "./VoidSaleDialog.vue";
 import InvoiceSummary from "./InvoiceSummary.vue";
 import ItemsTable from "./ItemsTable.vue";
 import invoiceItemMethods from "./invoiceItemMethods";
@@ -416,7 +424,7 @@ export default {
 		PostingDateRow,
 		MultiCurrencyRow,
 		InvoiceSummary,
-		CancelSaleDialog,
+		VoidSaleDialog,
 		ItemsTable,
 	},
 	computed: {
@@ -1132,6 +1140,7 @@ export default {
 				// For returns, move quantity toward zero
 				item.qty++;
 			} else {
+				if (item.qty > 0) this.cz_note_removed(item, 1);   // Cake Zone: a unit taken off is recorded
 				item.qty--;
 			}
 			if (item.qty == 0) {

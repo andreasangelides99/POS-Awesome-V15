@@ -12,6 +12,7 @@ import {
 } from "../../../offline/index.js";
 
 // Import composables
+import { noteRemoved, newClientId, currentUser } from "../../../offline/cz_voids.js";
 import { useBatchSerial } from "../../composables/useBatchSerial.js";
 import { useDiscounts } from "../../composables/useDiscounts.js";
 import { useItemAddition } from "../../composables/useItemAddition.js";
@@ -23,7 +24,27 @@ const { removeItem, addItem, getNewItem, clearInvoice } = useItemAddition();
 const { calcUom, calcStockQty } = useStockUtils();
 
 export default {
+	// Cake Zone (19 Nov 2026): every unit taken off a sale is recorded (no approval needed).
+	cz_note_removed(item, qty) {
+		try {
+			if (!item || !item.item_code || this.isReturnInvoice || !(qty > 0) || !this.pos_profile || !this.pos_profile.name) return;
+			noteRemoved({
+				client_id: newClientId(),
+				kind: "Item removed",
+				pos_profile: this.pos_profile.name,
+				user: currentUser(),
+				at: frappe.datetime.now_datetime(),
+				value: (Number(item.rate) || 0) * qty,
+				draft_invoice: this.invoice_doc && this.invoice_doc.name ? this.invoice_doc.name : "",
+				items: [{ item_code: item.item_code, item_name: item.item_name, qty, rate: item.rate }],
+			});
+		} catch (e) {
+			console.error("Recording a removed item failed", e);
+		}
+	},
+
 	remove_item(item) {
+		this.cz_note_removed(item, Number(item && item.qty) || 0);
 		return removeItem(item, this);
 	},
 

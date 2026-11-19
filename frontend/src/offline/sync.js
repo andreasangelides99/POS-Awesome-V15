@@ -3,6 +3,7 @@ import { memory, resetOfflineState, setLastSyncTotals, MAX_QUEUE_ITEMS, reduceCa
 import { persist } from "./core.js";
 import { updateLocalStock, validateStockForOfflineInvoice } from "./stock.js";
 import { offlineTillOn, actor, realShift, personFor, keyCall, syncOfflineOpenings, syncOfflineClosings } from "./cz_offline.js";
+import { syncOfflineVoids } from "./cz_voids.js";
 
 // Flag to avoid concurrent invoice syncs which can cause duplicate submissions
 let invoiceSyncInProgress = false;
@@ -313,6 +314,7 @@ async function syncOfflineInvoicesOnce() {
 			if (offlineTillOn() && canReachServer()) {
 				await syncOfflineClosings();
 			}
+			await syncOfflineVoids();
 			// No invoices to sync; clear last totals to avoid repeated messages
 			const totals = { pending: 0, synced: 0, drafted: 0 };
 			setLastSyncTotals(totals);
@@ -418,6 +420,7 @@ async function syncOfflineInvoicesOnce() {
 		if (offlineTillOn() && canReachServer()) {
 			closings = await syncOfflineClosings();
 		}
+		await syncOfflineVoids();
 		const totals = { pending: pendingLeft, synced, drafted, rejected, openings, closings };
 		if (pendingLeft || drafted) {
 			// Persist totals only if there are invoices still pending or drafted
