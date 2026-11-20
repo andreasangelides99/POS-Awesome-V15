@@ -9,7 +9,9 @@
 			:items="items"
 			:draft="invoice_doc && invoice_doc.name ? invoice_doc.name : ''"
 			:currency="(v) => formatCurrency(v)"
+			:last-item="cz_last_item"
 			@confirm="cancel_invoice"
+			@update:model-value="(v) => { if (!v) cz_last_item = false; }"
 		/>
 
 		<!-- Main Invoice Card (contains all invoice content) -->
@@ -321,7 +323,7 @@
 			@save-and-clear="save_and_clear_invoice"
 			@load-drafts="get_draft_invoices"
 			@select-order="get_draft_orders"
-			@cancel-sale="items.length ? (cancel_dialog = true) : cancel_invoice()"
+			@cancel-sale="items.length ? ((cz_last_item = false), (cancel_dialog = true)) : cancel_invoice()"
 			@open-returns="open_returns"
 			@print-draft="print_draft_invoice"
 			@show-payment="show_payment"
@@ -379,6 +381,7 @@ export default {
 			expanded: [], // Array of expanded row IDs
 			singleExpand: true, // Only one row expanded at a time
 			cancel_dialog: false, // Cancel dialog visibility
+			cz_last_item: false, // Cake Zone: the cancel came from taking off the last item
 			float_precision: 6, // Float precision for calculations
 			currency_precision: 6, // Currency precision for display
 			new_line: false, // Add new line for item
@@ -1140,6 +1143,11 @@ export default {
 				// For returns, move quantity toward zero
 				item.qty++;
 			} else {
+				if (item.qty <= 1 && this.cz_is_last(item)) {   // Cake Zone: the last unit cancels the sale
+					this.cz_last_item = true;
+					this.cancel_dialog = true;
+					return;
+				}
 				if (item.qty > 0) this.cz_note_removed(item, 1);   // Cake Zone: a unit taken off is recorded
 				item.qty--;
 			}

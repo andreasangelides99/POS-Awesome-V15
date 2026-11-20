@@ -125,15 +125,33 @@ export async function approveCancel(record, password) {
 		if (!e.network) throw new Error(e.message);
 	}
 	// no line to ERP: check the password on this PC
-	if (localLocked(record.approver)) throw new Error(__("Too many wrong passwords for this supervisor. Try again in 15 minutes."));
+	const offline = (msg) => Object.assign(new Error(msg), { offline: true });
+	if (localLocked(record.approver)) throw offline(__("Too many wrong passwords for this supervisor. Try again in 15 minutes."));
 	const ok = await verify(record.approver, password);
 	if (!ok) {
 		localFail(record.approver);
-		throw new Error(__("Wrong password, or this supervisor has not set up offline sign-in on this PC."));
+		throw offline(__("No internet, and that password could not be checked on this PC: it is wrong, or this supervisor has not set up offline sign-in here."));
 	}
 	localClear(record.approver);
 	queue(Object.assign({}, record, { approved_offline: 1 }));
 	return { queued: true };
+}
+
+// No internet and no supervisor who can sign in on this PC (owner, 20 Nov 2026): the sale is
+// cleared, and the cancel reaches ERP marked NOT APPROVED with the cashier's reason and note.
+export async function cancelNotApproved(record) {
+	const r = Object.assign({}, record, { not_approved: 1, approver: "", approver_reason: "" });
+	try {
+		return await serverCall(METHOD, { data: JSON.stringify(r) });
+	} catch (e) {
+		if (!e.network) throw new Error(e.message);
+	}
+	queue(r);
+	return { queued: true };
+}
+
+export function offlineNow() {
+	return !!actor() || !navigator.onLine;
 }
 
 // An item taken off a sale: recorded, never blocks the till.

@@ -44,8 +44,19 @@ export default {
 	},
 
 	remove_item(item) {
+		// Emptying a sale item by item is cancelling it (owner, 20 Nov 2026): the last item asks for a
+		// supervisor like Cancel Sale does, and the cancel clears the sale if approved.
+		if (this.cz_is_last(item)) {
+			this.cz_last_item = true;
+			this.cancel_dialog = true;
+			return;
+		}
 		this.cz_note_removed(item, Number(item && item.qty) || 0);
 		return removeItem(item, this);
+	},
+
+	cz_is_last(item) {
+		return !this.isReturnInvoice && item && this.items.length === 1 && this.items[0].posa_row_id === item.posa_row_id;
 	},
 
 	async add_item(item) {
