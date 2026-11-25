@@ -19,6 +19,8 @@ export default {
 	handelOffers() {
 		const offers = [];
 		this.posOffers.forEach((offer) => {
+			// Cake Zone combos are applied by applyCombos, never by POS Awesome's offer engine.
+			if (offer.offer === "Combo") return;
 			if (offer.apply_on === "Item Code") {
 				const itemOffer = this.getItemOffer(offer);
 				if (itemOffer) {
@@ -44,6 +46,82 @@ export default {
 
 		this.setItemGiveOffer(offers);
 		this.updatePosOffers(offers);
+		this.applyCombos();
+	},
+
+	// Cake Zone combos (owner, 25 Nov 2026): "Lemon Cake + Kit Kat Cake, both for R150".
+	// The cashier rings the products as usual. Whenever the cart changes, count how many whole sets
+	// of each running combo it holds and bring exactly that many sets down to the combo price, by a
+	// discount on the products' own lines - so the sale stays one Lemon Cake and one Kit Kat Cake,
+	// not a made-up product. Extra units stay at full price; take a cake out and the combo comes off.
+	// Each product's share of the saving per set (`off`) is worked out on the server in cents, so a
+	// set always adds up to the combo price exactly. It runs on the cached offers, so offline too.
+	// Idempotent: it only writes a field whose value changes, so the deep watcher settles.
+	applyCombos() {
+		const combos = (this.posOffers || []).filter((o) => o.offer === "Combo" && o.custom_combo);
+		const lines = (this.items || []).filter(
+			(it) => it && !it.posa_is_offer && !it.posa_is_replace && !(it.posa_offer_applied && !it.cz_combo),
+		);
+		const left = {};
+		lines.forEach((it) => {
+			left[it.item_code] = (left[it.item_code] || 0) + flt(it.qty);
+		});
+		// discount wanted per cart line, and the combo it comes from
+		const want = {};
+		const from = {};
+		combos.forEach((o) => {
+			let spec;
+			try {
+				spec = typeof o.custom_combo === "string" ? JSON.parse(o.custom_combo) : o.custom_combo;
+			} catch (e) {
+				return;
+			}
+			const parts = (spec && spec.lines) || [];
+			if (!parts.length) return;
+			const sets = Math.min(...parts.map((p) => Math.floor(flt(left[p.item_code] || 0) / flt(p.qty || 1))));
+			if (!(sets > 0)) return;
+			parts.forEach((p) => {
+				left[p.item_code] -= sets * flt(p.qty || 1);
+				let off = this.flt(sets * flt(p.off), 2);
+				lines.forEach((it) => {
+					if (off <= 0 || it.item_code !== p.item_code) return;
+					const room = this.flt(flt(it.qty) * flt(it.price_list_rate) - (want[it.posa_row_id] || 0), 2);
+					const take = Math.min(off, Math.max(room, 0));
+					if (take <= 0) return;
+					want[it.posa_row_id] = this.flt((want[it.posa_row_id] || 0) + take, 2);
+					from[it.posa_row_id] = o.custom_offer_batch || o.name;
+					off = this.flt(off - take, 2);
+				});
+			});
+		});
+		const set = (it, field, value) => {
+			if (it[field] !== value) it[field] = value;
+		};
+		lines.forEach((it) => {
+			const plr = flt(it.price_list_rate);
+			const disc = want[it.posa_row_id] || 0;
+			if (disc > 0 && flt(it.qty) > 0) {
+				const rate = this.flt(plr - disc / flt(it.qty), 2);
+				set(it, "cz_combo", from[it.posa_row_id]);
+				set(it, "custom_combo", from[it.posa_row_id]);
+				set(it, "rate", rate);
+				set(it, "base_rate", rate);
+				set(it, "discount_percentage", 0);
+				set(it, "discount_amount", this.flt(plr - rate, 2));
+				set(it, "base_discount_amount", this.flt(plr - rate, 2));
+				set(it, "amount", this.flt(flt(it.qty) * rate, 2));
+				set(it, "base_amount", this.flt(flt(it.qty) * rate, 2));
+			} else if (it.cz_combo) {
+				set(it, "cz_combo", null);
+				set(it, "custom_combo", null);
+				set(it, "rate", plr);
+				set(it, "base_rate", plr);
+				set(it, "discount_amount", 0);
+				set(it, "base_discount_amount", 0);
+				set(it, "amount", this.flt(flt(it.qty) * plr, 2));
+				set(it, "base_amount", this.flt(flt(it.qty) * plr, 2));
+			}
+		});
 	},
 
 	setItemGiveOffer(offers) {

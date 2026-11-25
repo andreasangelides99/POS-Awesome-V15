@@ -180,7 +180,9 @@ export function useDiscounts() {
 			return;
 		}
 
-                if (item.posa_offer_applied) {
+                // Cake Zone combo lines keep the rate applyCombos gave them; it recomputes on every
+                // cart change, so a quantity change is re-priced there, not reset to the list price here.
+                if (item.posa_offer_applied || item.cz_combo) {
                         item.amount = context.flt(item.qty * item.rate, context.currency_precision);
                         const baseCurrency = context.price_list_currency || context.pos_profile.currency;
                         if (context.selected_currency !== baseCurrency) {
