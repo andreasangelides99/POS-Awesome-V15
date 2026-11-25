@@ -119,6 +119,7 @@ export {
 	markLogoutDue,
 	finishLogout,
 	rememberProfile,
+	markUsedToday,
 	profileBundle,
 	afterSignIn,
 	openOffline,

@@ -8,6 +8,7 @@ import {
     setTaxTemplate,
     offlineTillOn,
     rememberProfile,
+    markUsedToday,
     clearActor,
     actor,
     logoutDue,
@@ -347,6 +348,8 @@ export function usePosShift(openDialog) {
                             console.error("Could not open the Z report", e);
                         }
                     }
+                    // A till closed today cannot open again offline tonight (cz_offline.js).
+                    markUsedToday(pos_profile.value?.name, pos_opening_shift.value?.user);
                     pos_opening_shift.value = null;
                     pos_profile.value = null;
                     clearOpeningStorage();

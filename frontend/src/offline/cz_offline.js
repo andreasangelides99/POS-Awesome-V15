@@ -10,6 +10,7 @@
 //   cz_offline_profile:<till>   the till's profile bundle, saved at every online opening
 //   cz_offline_openings    shifts opened offline that the server has not seen yet
 //   cz_offline_shift_map   offline shift id -> the real shift's name, once synced
+//   cz_offline_today       the tills and people that opened or closed a shift on this PC today
 // and in sessionStorage the person signed in offline (cz_offline_actor).
 import { getOpeningStorage, setOpeningStorage, setOpeningDialogStorage, czMirrored, memory } from "./cache.js";
 
@@ -18,6 +19,7 @@ const OPENINGS = "cz_offline_openings";
 const SHIFT_MAP = "cz_offline_shift_map";
 const CLOSINGS = "cz_offline_closings";
 const ACTOR = "cz_offline_actor";
+const TODAY = "cz_offline_today";
 const PROFILE = (name) => `cz_offline_profile:${name}`;
 const ITERATIONS = 150000;
 
@@ -311,10 +313,61 @@ export async function finishLogout() {
 	}
 }
 
+// ---- once a day, offline too (the owner, 25 Nov 2026) ----------------------------------------
+// The server's once-a-day rules cannot refuse an offline opening: it arrives with its sales
+// already rung, so sync_opening accepts it and flags it. That let a cashier who had closed for
+// the night sign in on the till's own screen and open again - six empty evening shifts at Sosha,
+// Hebron and Pan Africa (17-24 Nov), each one a phantom cash-up. So the PC refuses at the door:
+// it remembers which tills and which people opened or closed a shift on it today, and an
+// offline opening for either is refused. A second shift the cash office authorises needs the
+// internet, since only the server knows about the authorisation.
+function todayDate() {
+	return frappe.datetime.now_date();
+}
+
+function todayRecord() {
+	const r = read(TODAY, null);
+	return r && r.date === todayDate() ? r : { date: todayDate(), tills: [], people: [] };
+}
+
+export function markUsedToday(till, user, date) {
+	if (!offlineTillOn() || !till) return;
+	if (date && String(date).slice(0, 10) !== todayDate()) return;
+	try {
+		const r = todayRecord();
+		if (!r.tills.includes(till)) r.tills.push(till);
+		if (user && !r.people.includes(user)) r.people.push(user);
+		write(TODAY, r);
+	} catch (e) {
+		console.warn("Could not note today's shift", e);
+	}
+}
+
+function refuseSecondOpening(till, user) {
+	const r = todayRecord();
+	if (r.tills.includes(till)) {
+		throw new Error(
+			__(
+				"{0} has already been opened today, so it cannot open again offline. A till is counted and declared once a day. If it genuinely has to trade again, wait for the internet so the cash office can authorise a second shift.",
+				[till],
+			),
+		);
+	}
+	if (user && r.people.includes(user)) {
+		throw new Error(
+			__(
+				"You have already opened a shift today, so you cannot open another offline. Each person opens one till once a day.",
+			),
+		);
+	}
+}
+
 // ---- the till's profile, kept so a shift can open with no server ---------------------------
 
 export function rememberProfile(data) {
 	if (!offlineTillOn() || !data || !data.pos_profile || !data.pos_profile.name) return;
+	const s = data.pos_opening_shift;
+	if (s) markUsedToday(data.pos_profile.name, s.user, s.posting_date || s.period_start_date);
 	try {
 		const { pos_opening_shift, ...bundle } = JSON.parse(JSON.stringify(data));
 		write(PROFILE(data.pos_profile.name), bundle);
@@ -372,8 +425,10 @@ export function openOffline({ pos_profile, company, balance_details }) {
 			__("{0} has never been opened online on this PC, so it cannot open offline yet.", [pos_profile]),
 		);
 	}
+	refuseSecondOpening(pos_profile, a.user);
 	const client_id = "OFF-" + crypto.randomUUID();
 	const now = frappe.datetime.now_datetime();
+	markUsedToday(pos_profile, a.user);
 	const balances = JSON.parse(JSON.stringify(balance_details || []));
 	const queue = read(OPENINGS, []);
 	queue.push({ client_id, user: a.user, pos_profile, company, period_start_date: now, balance_details: balances });
@@ -544,6 +599,7 @@ export function closeOffline(data) {
 	});
 	const closing_amounts = {};
 	(data.payment_reconciliation || []).forEach((r) => (closing_amounts[r.mode_of_payment] = parseFloat(r.closing_amount) || 0));
+	markUsedToday(data.pos_profile, data.user);
 	const queue = read(CLOSINGS, []);
 	queue.push({
 		client_id: "OFFC-" + crypto.randomUUID(),
