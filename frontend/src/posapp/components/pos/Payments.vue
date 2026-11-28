@@ -1587,6 +1587,12 @@ export default {
 						vm.loading = false;
 						return;
 					}
+					// Cake Zone (28 Nov 2026): print the sale the SERVER saved. invoice_doc.name is
+					// empty when the sale was paid before its draft was saved, and the till then
+					// printed /printview?name=undefined - the "ERROR" slip, 61 times 16-28 Nov.
+					if (r.message.name) {
+						vm.invoice_doc.name = r.message.name;
+					}
 					if (print) {
 						vm.load_print_page();
 					}
