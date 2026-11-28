@@ -10,7 +10,7 @@ import themePlugin from "./plugins/theme.js";
 import * as components from "vuetify/components";
 import * as directives from "vuetify/directives";
 import Home from "./Home.vue";
-import { sellPastStock, canReachServer } from "../offline/index.js";
+import { sellPastStock, stockBlind, canReachServer } from "../offline/index.js";
 
 // Expose Dexie globally for libraries that expect a global Dexie instance
 if (typeof window !== "undefined" && !window.Dexie) {
@@ -100,9 +100,12 @@ frappe.PosApp.posapp = class {
 		const app = createApp(Home);
 		app.component("VueDatePicker", VueDatePicker);
 		// Cake Zone offline till: templates and plain functions both need these.
-		window.czSellPastStock = sellPastStock;
+		// czSellPastStock lifts every cart stock cap; with stockBlind it is always lifted.
+		const czNoCap = () => stockBlind() || sellPastStock();
+		window.czSellPastStock = czNoCap;
+		window.czStockBlind = stockBlind;
 		window.czCanSync = canReachServer;
-		app.config.globalProperties.czSellPastStock = sellPastStock;
+		app.config.globalProperties.czSellPastStock = czNoCap;
 		app.use(eventBus);
 		app.use(vuetify);
 		app.use(themePlugin, { vuetify });

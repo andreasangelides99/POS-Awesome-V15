@@ -7,6 +7,7 @@ import frappe
 from erpnext.accounts.doctype.sales_invoice.sales_invoice import get_bank_cash_account
 from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
 from erpnext.setup.utils import get_exchange_rate
+from erpnext.stock.stock_ledger import NegativeStockError
 from erpnext.stock.doctype.batch.batch import (
     get_batch_no,
     get_batch_qty,
@@ -158,12 +159,44 @@ def _should_block(pos_profile):
 
 
 def _validate_stock_on_invoice(invoice_doc):
-        items_to_check = [d.as_dict() for d in invoice_doc.items if d.get("is_stock_item")]
+        # Cake Zone, 28 Nov 2026: an offline sale is never refused for stock - ERP books in the gap
+        # (cakezone_erp auto_adjust.top_up_offline_sale) - so it is not checked here either.
+        if getattr(frappe.local, "cz_offline_key", None):
+                return
+        # Every row, not only rows flagged is_stock_item: a saved Sales Invoice Item has no such
+        # field, so the old filter left nothing to check and this guard never fired - ERPNext's own
+        # refusal ("5.0 units of X needed") did, and that names the shortfall. _collect_stock_errors
+        # asks the Item master which rows are stock.
+        items_to_check = [d.as_dict() for d in invoice_doc.items]
         if hasattr(invoice_doc, "packed_items"):
                 items_to_check.extend([d.as_dict() for d in invoice_doc.packed_items])
         errors = _collect_stock_errors(items_to_check)
         if errors and _should_block(invoice_doc.pos_profile):
-                frappe.throw(frappe.as_json({"errors": errors}), frappe.ValidationError)
+                # Cake Zone, 28 Nov 2026 (owner): name the product, never a quantity. The old
+                # message was the raw list with available_qty in it, and the till's own cap said
+                # "Maximum available quantity is N": staff rang products up until the till
+                # stopped them and so read the book stock before the blind weekly count. The
+                # cart now has no cap; this is the only check, and each refusal is recorded.
+                _record_stock_refusal(invoice_doc, errors)
+                frappe.throw(_stock_refusal_text(errors), frappe.ValidationError, title=_("Sale not completed"))
+
+
+def _stock_refusal_text(errors):
+        names = []
+        for e in errors:
+                n = frappe.get_cached_value("Item", e.get("item_code"), "item_name") or e.get("item_code")
+                if n not in names:
+                        names.append(n)
+        return _("Not enough stock to sell {0}. Take it off the sale or ring fewer, then pay again.").format(
+                ", ".join(names))
+
+
+def _record_stock_refusal(invoice_doc, errors):
+        try:
+                from cakezone_erp.api.voids import record_stock_refusal
+        except ImportError:
+                return
+        record_stock_refusal(invoice_doc, errors)
 
 
 def _auto_set_return_batches(invoice_doc):
@@ -222,7 +255,12 @@ def validate_cart_items(items, pos_profile=None):
 
     if isinstance(items, str):
         items = json.loads(items)
-    return _collect_stock_errors(items)
+    errors = _collect_stock_errors(items)
+    # Cake Zone, 28 Nov 2026: the till no longer calls this, and it must not hand anyone at a
+    # branch the book stock - only which products are short.
+    if "System Manager" not in frappe.get_roles():
+        errors = [{"item_code": e.get("item_code"), "warehouse": e.get("warehouse")} for e in errors]
+    return errors
 
 
 def get_latest_rate(from_currency: str, to_currency: str):
@@ -727,7 +765,17 @@ def submit_invoice(invoice, data):
                 },
             )
     else:
-        invoice_doc.submit()
+        try:
+            invoice_doc.submit()
+        except NegativeStockError:
+            # Cake Zone, 28 Nov 2026: the backstop - two tills selling the last ones at once get
+            # past the check above. ERPNext's message names the shortfall; answer as the check does.
+            frappe.clear_messages()
+            errors = _collect_stock_errors([d.as_dict() for d in invoice_doc.items]) or [
+                {"item_code": d.item_code, "warehouse": d.warehouse, "requested_qty": flt(d.stock_qty or d.qty),
+                 "available_qty": 0} for d in invoice_doc.items]
+            _record_stock_refusal(invoice_doc, errors)
+            frappe.throw(_stock_refusal_text(errors), frappe.ValidationError, title=_("Sale not completed"))
         redeeming_customer_credit(invoice_doc, data, is_payment_entry, total_cash, cash_account, payments)
 
     return {"name": invoice_doc.name, "status": invoice_doc.docstatus}

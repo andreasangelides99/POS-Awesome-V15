@@ -461,6 +461,17 @@ export function realShift(name) {
 
 // ---- stock: warn, never refuse, while offline (the owner, 10 Nov 2026) ---------------------
 
+// Cake Zone, 28 Nov 2026 (owner): the till never tells the cashier the book stock.
+// Jubilee staff rang products up one at a time until the till said "Maximum available quantity
+// is N", then took them off - the night before the weekly blind count. Hiding the number was not
+// enough (the point where the till stops IS the number), so the cart has no cap at all, online or
+// offline, and gives no warning. ERP judges the stock only when the sale is submitted; a sale it
+// refuses names the product, never a quantity, and is recorded. A probe that is not refused is a
+// real sale on the prober's name.
+export function stockBlind() {
+	return true;
+}
+
 export function sellPastStock() {
 	if (!offlineTillOn()) return false;
 	const offline = !navigator.onLine || window.serverOnline === false;

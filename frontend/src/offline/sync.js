@@ -2,7 +2,7 @@
 import { memory, resetOfflineState, setLastSyncTotals, MAX_QUEUE_ITEMS, reduceCacheUsage } from "./cache.js";
 import { persist } from "./core.js";
 import { updateLocalStock, validateStockForOfflineInvoice } from "./stock.js";
-import { offlineTillOn, actor, realShift, personFor, keyCall, syncOfflineOpenings, syncOfflineClosings } from "./cz_offline.js";
+import { stockBlind, offlineTillOn, actor, realShift, personFor, keyCall, syncOfflineOpenings, syncOfflineClosings } from "./cz_offline.js";
 import { syncOfflineVoids } from "./cz_voids.js";
 
 // Flag to avoid concurrent invoice syncs which can cause duplicate submissions
@@ -48,7 +48,12 @@ export function saveOfflineInvoice(entry) {
 	// check lived in the old monolithic offline.js and was lost when the module
 	// was split; without it an offline oversell is queued, the receipt prints,
 	// and the server rejects it on sync - by which time the cake has gone.
-	const validation = validateStockForOfflineInvoice(entry.invoice.items);
+	// Cake Zone, 28 Nov 2026: not when the till is stock-blind - the warning reads "The branch
+	// has 16", which tells the cashier the book stock. ERP tops up an offline sale it cannot
+	// cover (auto_adjust.top_up_offline_sale) and lists it for head office.
+	const validation = stockBlind()
+		? { isValid: true, invalidItems: [], errorMessage: "" }
+		: validateStockForOfflineInvoice(entry.invoice.items);
 	let warning = "";
 	if (!validation.isValid) {
 		// Cake Zone (the owner, 10 Nov 2026): with the offline till on, WARN and sell. The

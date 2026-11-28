@@ -688,7 +688,7 @@ export default {
 						]),
 						color: "error",
 					});
-				} else {
+				} else if (!(window.czStockBlind && window.czStockBlind())) {
 					this.eventBus.emit("show_message", {
 						title: __("Stock is lower than requested. Proceeding may create negative stock."),
 						color: "warning",

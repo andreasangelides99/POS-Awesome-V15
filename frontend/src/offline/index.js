@@ -126,6 +126,7 @@ export {
 	pendingOpeningCount,
 	realShift,
 	sellPastStock,
+	stockBlind,
 	syncOfflineOpenings,
 	offlineClosingData,
 	closeOffline,

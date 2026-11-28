@@ -1411,8 +1411,10 @@ export default {
 				frappe.utils.play_sound("error");
 				return;
 			}
-			// Validate stock availability before submitting
-			if (!isOffline()) {
+			// Validate stock availability before submitting. Not at Cake Zone: it lists
+			// "item - available qty", which tells the cashier the book stock (28 Nov 2026).
+			// ERP still refuses a sale beyond stock when it is submitted, without a number.
+			if (!isOffline() && !(window.czStockBlind && window.czStockBlind())) {
 				try {
 					const itemsToCheck = this.invoice_doc.items.filter((it) => !it.is_bundle);
 					const stockCheck = await frappe.call({
